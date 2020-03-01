@@ -7,7 +7,7 @@ mod graphics;
 fn main() {
     let event_loop = glium::glutin::event_loop::EventLoop::new();
     let wb = glium::glutin::window::WindowBuilder::new();
-    let cb = glium::glutin::ContextBuilder::new().with_depth_buffer(24);
+    let cb = glium::glutin::ContextBuilder::new().with_depth_buffer(24).with_multisampling(2);
     let display = glium::Display::new(wb, cb, &event_loop).unwrap();
 
     let quad = Rc::new(graphics::Shape::from_ply(&display, "quad.ply"));
