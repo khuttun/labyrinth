@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate glium;
 use glium::glutin;
+use std::rc::Rc;
 mod graphics;
 
 fn main() {
@@ -9,8 +10,8 @@ fn main() {
     let cb = glium::glutin::ContextBuilder::new().with_depth_buffer(24);
     let display = glium::Display::new(wb, cb, &event_loop).unwrap();
 
-    let quad = graphics::Shape::from_ply(&display, "quad.ply");
-    let sphere = graphics::Shape::from_ply(&display, "sphere.ply");
+    let quad = Rc::new(graphics::Shape::from_ply(&display, "quad.ply"));
+    let sphere = Rc::new(graphics::Shape::from_ply(&display, "sphere.ply"));
 
     let mut board = graphics::Object::new(&quad);
     board.set_scaling(3.0, 2.0, 1.0);

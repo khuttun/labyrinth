@@ -1,4 +1,5 @@
 use nalgebra_glm as glm;
+use std::rc::Rc;
 
 #[derive(Copy, Clone, Debug)]
 struct Vertex {
@@ -55,18 +56,18 @@ impl Shape {
     }
 }
 
-pub struct Object<'a> {
-    shape: &'a Shape,
+pub struct Object {
+    shape: Rc<Shape>,
     scaling: glm::Vec3,
     rotation: (f32, glm::Vec3),
     translation: glm::Vec3,
     model_matrix: glm::Mat4x4,
 }
 
-impl<'a> Object<'a> {
-    pub fn new(s: &Shape) -> Object {
+impl Object {
+    pub fn new(s: &Rc<Shape>) -> Object {
         Object {
-            shape: s,
+            shape: Rc::clone(s),
             scaling: glm::vec3(1.0, 1.0, 1.0),
             rotation: (0.0, glm::vec3(1.0, 0.0, 0.0)),
             translation: glm::vec3(0.0, 0.0, 0.0),
@@ -97,25 +98,21 @@ impl<'a> Object<'a> {
     }
 }
 
-// pub type ShapeId = usize;
-
 pub type ObjectId = usize;
 
-pub struct Scene<'a> {
-    // shapes: Vec<Shape>,
-    objects: Vec<Object<'a>>,
+pub struct Scene {
+    objects: Vec<Object>,
     view_matrix: glm::Mat4x4,
     perspective_matrix: glm::Mat4x4,
     light_position: glm::Vec4,
     default_shaders: glium::program::Program,
 }
 
-impl<'a> Scene<'a> {
-    pub fn new<F>(facade: &F) -> Scene<'a>
+impl Scene {
+    pub fn new<F>(facade: &F) -> Scene
         where F: glium::backend::Facade
     {
         Scene {
-            // shapes: Vec::new(),
             objects: Vec::new(),
             view_matrix: glm::look_at(&glm::vec3(0.0, 5.0, 5.0), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0)),
             perspective_matrix: glm::perspective(1.0, glm::radians(&glm::vec1(50.0)).x, 0.1, 100.0),
@@ -125,33 +122,12 @@ impl<'a> Scene<'a> {
         }
     }
 
-    // pub fn create_shape<F>(&mut self, facade: &F, ply_file: &str) -> ShapeId
-    //     where F: glium::backend::Facade
-    // {
-    //     self.shapes.push(Shape::from_ply(facade, ply_file));
-    //     self.shapes.len() - 1
-    // }
-
-    // pub fn create_object(&mut self, shape: ShapeId) -> ObjectId {
-    //     self.objects.push(Object::new(&self.shapes[shape]));
-    //     self.objects.len() - 1
-    // }
-
-    // pub fn add_shape(&mut self, shape: Shape) -> ShapeId {
-    //     self.shapes.push(shape);
-    //     self.shapes.len() - 1
-    // }
-
-    // pub fn get_shape(&self, id: ShapeId) -> &Shape {
-    //     &self.shapes[id]
-    // }
-
-    pub fn add_object(&mut self, obj: Object<'a>) -> ObjectId {
+    pub fn add_object(&mut self, obj: Object) -> ObjectId {
         self.objects.push(obj);
         self.objects.len() - 1
     }
 
-    pub fn get_object(&mut self, id: ObjectId) -> &mut Object<'a> {
+    pub fn get_object(&mut self, id: ObjectId) -> &mut Object {
         &mut self.objects[id]
     }
 
