@@ -18,6 +18,8 @@ fn main() {
     board.set_rotation(-std::f32::consts::PI / 2.0, 1.0, 0.0, 0.0);
 
     let mut ball = graphics::Object::new(&sphere);
+    ball.set_color(0.6, 0.4, 0.0);
+    ball.set_shininess(100.0);
     ball.set_position(-1.0, 2.0, 1.0);
 
     let mut scene = graphics::Scene::new(&display);

@@ -1,6 +1,8 @@
 #version 330
 
 uniform vec3 lightPosCamSpace;
+uniform vec3 materialColor;
+uniform float materialShininess;
 
 // Fragment position and normal in camera space
 in vec3 fragPos;
@@ -16,8 +18,6 @@ vec3 gammaCorrect(vec3 color)
 // Blinn-Phong shading
 void main()
 {
-    vec3 materialColor = vec3(0.6, 0.3, 0.0);
-    float materialShininess = 100.0;
     vec3 specularColor = vec3(1.0, 1.0, 1.0);
     
     vec3 normal = normalize(fragNormal);
