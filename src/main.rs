@@ -17,11 +17,17 @@ fn main() {
     display.gl_window().window().set_cursor_visible(false);
 
     let quad = Rc::new(graphics::Shape::from_ply(&display, "quad.ply"));
+    let cube = Rc::new(graphics::Shape::from_ply(&display, "cube.ply"));
     let sphere = Rc::new(graphics::Shape::from_ply(&display, "sphere.ply"));
 
     let mut board = graphics::Object::new(&quad);
     board.set_scaling(3.0, 2.0, 1.0);
     board.set_rotation(-std::f32::consts::PI / 2.0, 1.0, 0.0, 0.0);
+
+    let mut wall = graphics::Object::new(&cube);
+    wall.set_scaling(1.0, 3.0, 2.0);
+    wall.set_rotation(std::f32::consts::PI / 4.0, 0.0, 1.0, 0.0);
+    wall.set_position(0.0, 1.5, 0.0);
 
     let mut ball = graphics::Object::new(&sphere);
     ball.set_color(0.6, 0.4, 0.0);
@@ -30,6 +36,7 @@ fn main() {
 
     let mut scene = graphics::Scene::new(&display);
     scene.add_object(board);
+    scene.add_object(wall);
     let ball_id = scene.add_object(ball);
 
     event_loop.run(move |event, _, control_flow| {
