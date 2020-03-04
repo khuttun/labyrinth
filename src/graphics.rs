@@ -45,7 +45,11 @@ impl Shape {
         // println!("Vertices (length {}): {:?}", vertices.len(), vertices);
 
         let indices: Vec<u32> = ply.payload["face"].iter().map(
-            |f| as_list_uint(&f["vertex_indices"])).flatten().collect();
+            |f| {
+                let vis = as_list_uint(&f["vertex_indices"]);
+                assert!(vis.len() == 3, "{} contains non-triangle faces", ply_file);
+                vis
+            }).flatten().collect();
 
         // println!("Indices (length {}): {:?}", indices.len(), indices);
 
