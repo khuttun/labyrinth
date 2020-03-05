@@ -2,6 +2,7 @@
 extern crate glium;
 use glium::glutin;
 use std::rc::Rc;
+mod game;
 mod graphics;
 
 fn main() {
@@ -15,6 +16,9 @@ fn main() {
     display.gl_window().window().set_cursor_position(
         glutin::dpi::PhysicalPosition::new(w / 2, h / 2)).unwrap();
     display.gl_window().window().set_cursor_visible(false);
+
+    let level1 = game::Level::from_json("level1.json");
+    println!("Level 1: {:#?}", level1);
 
     let quad = Rc::new(graphics::Shape::from_ply(&display, "quad.ply"));
     let cube = Rc::new(graphics::Shape::from_ply(&display, "cube.ply"));

@@ -6,5 +6,6 @@ edition = "2018"
 
 [dependencies]
 glium = "0.26.0"
+json = "0.12.1"
 nalgebra-glm = "0.5.0"
 ply-rs = "0.1.2"
