@@ -75,7 +75,7 @@ impl Object {
         Object {
             shape: Rc::clone(s),
             color: glm::vec3(0.2, 0.2, 0.2),
-            shininess: 50.0,
+            shininess: 20.0,
             scaling: glm::vec3(1.0, 1.0, 1.0),
             rotation: (0.0, glm::vec3(1.0, 0.0, 0.0)),
             translation: glm::vec3(0.0, 0.0, 0.0),
@@ -125,13 +125,13 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn new<F>(facade: &F) -> Scene
+    pub fn new<F>(facade: &F, aspect: f32) -> Scene
         where F: glium::backend::Facade
     {
         Scene {
             objects: Vec::new(),
             view_matrix: glm::look_at(&glm::vec3(0.0, 5.0, 5.0), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0)),
-            perspective_matrix: glm::perspective(1.0, glm::radians(&glm::vec1(50.0)).x, 0.1, 100.0),
+            perspective_matrix: glm::perspective(aspect, glm::radians(&glm::vec1(45.0)).x, 0.1, 100.0),
             light_position: glm::vec4(0.0, 5.0, 0.0, 1.0),
             default_shaders: glium::program::Program::from_source(
                 facade, include_str!("default.vert"), include_str!("default.frag"), None).unwrap()
@@ -145,6 +145,17 @@ impl Scene {
 
     pub fn get_object(&mut self, id: ObjectId) -> &mut Object {
         &mut self.objects[id]
+    }
+
+    pub fn look_at(&mut self, cam_x: f32, cam_y: f32, cam_z: f32, center_x: f32, center_y: f32, center_z: f32) {
+        self.view_matrix = glm::look_at(
+            &glm::vec3(cam_x, cam_y, cam_z),
+            &glm::vec3(center_x, center_y, center_z),
+            &glm::vec3(0.0, 1.0, 0.0));
+    }
+
+    pub fn set_light_position(&mut self, x: f32, y: f32, z: f32) {
+        self.light_position = glm::vec4(x, y, z, 1.0);
     }
 
     pub fn draw<S>(&self, surface: &mut S)

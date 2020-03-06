@@ -1,7 +1,10 @@
+pub const BALL_R: f32 = 1.0;
+pub const WALL_H: f32 = 1.5;
+
 #[derive(Debug)]
 pub struct Point {
-    x: f32,
-    y: f32,
+    pub x: f32,
+    pub y: f32,
 }
 
 impl From<&json::JsonValue> for Point {
@@ -15,8 +18,8 @@ impl From<&json::JsonValue> for Point {
 
 #[derive(Debug)]
 pub struct Size {
-    w: f32,
-    h: f32,
+    pub w: f32,
+    pub h: f32,
 }
 
 impl From<&json::JsonValue> for Size {
@@ -30,8 +33,8 @@ impl From<&json::JsonValue> for Size {
 
 #[derive(Debug)]
 pub struct Rect {
-    pos: Point,
-    size: Size,
+    pub pos: Point,
+    pub size: Size,
 }
 
 impl From<&json::JsonValue> for Rect {
@@ -45,12 +48,12 @@ impl From<&json::JsonValue> for Rect {
 
 #[derive(Debug)]
 pub struct Level {
-    name: String,
-    size: Size,
-    start: Point,
-    end: Rect,
-    walls: Vec<Rect>,
-    holes: Vec<Point>,
+    pub name: String,
+    pub size: Size,
+    pub start: Point,
+    pub end: Rect,
+    pub walls: Vec<Rect>,
+    pub holes: Vec<Point>,
 }
 
 impl Level {
