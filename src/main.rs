@@ -51,7 +51,7 @@ fn main() {
         scene.add_object(obj);
     }
 
-    scene.set_light_position(level1.size.w / 2.0, 30.0 * game::BALL_R, level1.size.h / 2.0);
+    scene.set_light_position(level1.size.w / 2.0, level1.size.w.max(level1.size.h) / 2.0, level1.size.h / 2.0);
 
     scene.look_at(
         level1.start.x, 30.0 * game::BALL_R, level1.start.y + 30.0 * game::BALL_R,

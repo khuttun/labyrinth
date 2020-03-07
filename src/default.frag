@@ -21,8 +21,7 @@ void main()
     vec3 specularColor = vec3(1.0, 1.0, 1.0);
     
     vec3 normal = normalize(fragNormal);
-    vec3 light = lightPosCamSpace - fragPos;
-    vec3 lightDir = normalize(light);
+    vec3 lightDir = normalize(lightPosCamSpace - fragPos);
     
     float diffuseCoeff = max(0.0, dot(normal, lightDir));
     
@@ -35,13 +34,10 @@ void main()
         specularCoeff = pow(reflectedAmount, materialShininess);
     }
     
-    float lightDist = length(light);
-    float attenuation = 1.0 / (1.0 + 0.01 * pow(lightDist, 2.0));
-    
     vec3 ambient = 0.06 * materialColor;
     vec3 diffuse = diffuseCoeff * materialColor;
     vec3 specular = specularCoeff * specularColor;
-    vec3 color = ambient + attenuation * (diffuse + specular);
+    vec3 color = ambient + diffuse + specular;
     
     outputColor = vec4(gammaCorrect(color), 1.0);
 }

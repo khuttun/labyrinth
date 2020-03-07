@@ -133,8 +133,19 @@ impl Scene {
             view_matrix: glm::look_at(&glm::vec3(0.0, 5.0, 5.0), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0)),
             perspective_matrix: glm::perspective(aspect, glm::radians(&glm::vec1(45.0)).x, 0.1, 100.0),
             light_position: glm::vec4(0.0, 5.0, 0.0, 1.0),
-            default_shaders: glium::program::Program::from_source(
-                facade, include_str!("default.vert"), include_str!("default.frag"), None).unwrap()
+            default_shaders: glium::program::Program::new(
+                facade,
+                glium::program::ProgramCreationInput::SourceCode {
+                    vertex_shader: include_str!("default.vert"),
+                    fragment_shader: include_str!("default.frag"),
+                    geometry_shader: None,
+                    tessellation_control_shader: None,
+                    tessellation_evaluation_shader: None,
+                    transform_feedback_varyings: None,
+                    outputs_srgb: true, // set true so that glium doesn't enable GL_FRAMEBUFFER_SRGB
+                    uses_point_size: false,
+                }
+            ).unwrap(),
         }
     }
 
