@@ -63,7 +63,6 @@ impl Shape {
 pub struct Object {
     shape: Rc<Shape>,
     color: glm::Vec3,
-    shininess: f32,
     scaling: glm::Vec3,
     rotation: (f32, glm::Vec3),
     translation: glm::Vec3,
@@ -75,7 +74,6 @@ impl Object {
         Object {
             shape: Rc::clone(s),
             color: glm::vec3(0.2, 0.2, 0.2),
-            shininess: 20.0,
             scaling: glm::vec3(1.0, 1.0, 1.0),
             rotation: (0.0, glm::vec3(1.0, 0.0, 0.0)),
             translation: glm::vec3(0.0, 0.0, 0.0),
@@ -85,10 +83,6 @@ impl Object {
 
     pub fn set_color(&mut self, r: f32, g: f32, b: f32) {
         self.color = glm::vec3(r, g, b);
-    }
-
-    pub fn set_shininess(&mut self, s: f32) {
-        self.shininess = s;
     }
 
     pub fn set_scaling(&mut self, x: f32, y: f32, z: f32) {
@@ -174,25 +168,18 @@ impl Scene {
     {
         surface.clear_color_and_depth((0.0, 0.0, 0.0, 1.0), 1.0);
 
-        let pers_array: [[f32; 4]; 4] = self.perspective_matrix.into();
-        let light_pos_array: [f32; 3] = (self.view_matrix * self.light_position).xyz().into();
+        let light_pos_array: [f32; 3] = self.light_position.xyz().into();
         for obj in self.objects.iter() {
-            let mv = self.view_matrix * obj.model_matrix;
-            let mv_array: [[f32; 4]; 4] = mv.into();
-            let mv_normal = glm::transpose(&glm::inverse(&glm::mat4_to_mat3(&mv)));
-            let mv_normal_array: [[f32; 3]; 3] = mv_normal.into();
+            let mvp_array: [[f32; 4]; 4] = (self.perspective_matrix * self.view_matrix * obj.model_matrix).into();
             let color_array: [f32; 3] = obj.color.into();
             surface.draw(
                 &obj.shape.vertex_buffer,
                 &obj.shape.index_buffer,
                 &self.default_shaders,
                 &glium::uniform! {
-                    modelView: mv_array,
-                    normalModelView: mv_normal_array,
-                    projection: pers_array,
-                    lightPosCamSpace: light_pos_array,
+                    modelViewProjection: mvp_array,
+                    lightPos: light_pos_array,
                     materialColor: color_array,
-                    materialShininess: obj.shininess,
                 },
                 &glium::DrawParameters {
                     depth: glium::Depth {

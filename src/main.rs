@@ -39,7 +39,6 @@ fn main() {
     let mut ball = graphics::Object::new(&sphere);
     ball.set_color(0.6, 0.6, 0.6);
     ball.set_scaling(game::BALL_R, game::BALL_R, game::BALL_R);
-    ball.set_shininess(100.0);
     ball.set_position(level1.start.x, game::BALL_R, level1.start.y);
     let ball_id = scene.add_object(ball);
 
