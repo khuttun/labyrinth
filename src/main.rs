@@ -25,8 +25,8 @@ fn main() {
     let cube = Rc::new(graphics::Shape::from_ply(&display, "cube.ply"));
     let sphere = Rc::new(graphics::Shape::from_ply(&display, "sphere.ply"));
     
+    // Create a level and set up the scene based on it
     let level1 = game::Level::from_json("level1.json");
-    //println!("Level 1: {:#?}", level1);
 
     let mut scene = graphics::Scene::new(&display, w as f32 / h as f32);
 
@@ -55,6 +55,9 @@ fn main() {
     scene.look_at(
         level1.start.x, 30.0 * game::BALL_R, level1.start.y + 30.0 * game::BALL_R,
         level1.start.x, 0.0, level1.start.y);
+
+    // Create a new game from the level and enter the main event loop
+    let game = game::Game::new(level1);
 
     event_loop.run(move |event, _, control_flow| {
         let next_frame_time = std::time::Instant::now() + std::time::Duration::from_nanos(16_666_667);
@@ -86,7 +89,14 @@ fn main() {
                 _ => return,
             },
             glutin::event::Event::NewEvents(cause) => match cause {
-                glutin::event::StartCause::ResumeTimeReached { .. } => (),
+                glutin::event::StartCause::ResumeTimeReached { .. } => {
+                    match game.state {
+                        game::State::InProgress { ball_pos } => {
+                            scene.get_object(ball_id).set_position(ball_pos.x, game::BALL_R, ball_pos.y);
+                        }
+                        _ => ()
+                    }
+                },
                 glutin::event::StartCause::Init => (),
                 _ => return,
             },
