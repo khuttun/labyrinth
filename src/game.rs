@@ -3,6 +3,7 @@ use std::time::Instant;
 pub const BALL_R: f32 = 1.0;
 pub const WALL_H: f32 = 1.5;
 const ACCEL_COEFF: f32 = 100.0 / std::f32::consts::PI;
+const BOUNCE_COEFF: f32 = 0.2;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Point {
@@ -36,7 +37,7 @@ impl From<&json::JsonValue> for Size {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Rect {
-    pub pos: Point,
+    pub pos: Point, // top-left corner
     pub size: Size,
 }
 
@@ -46,6 +47,27 @@ impl From<&json::JsonValue> for Rect {
             pos: Point::from(&json_val["pos"]),
             size: Size::from(&json_val["size"]),
         }
+    }
+}
+
+impl Rect {
+    // Check if self contains Point p
+    fn contains(&self, p: Point) -> bool {
+        p.x >= self.pos.x && p.x < self.pos.x + self.size.w && p.y >= self.pos.y && p.y < self.pos.y + self.size.h
+    }
+
+    // Functions for creating a new Rect sharing an edge with self
+    fn adjacent_left(&self, w: f32) -> Rect {
+        Rect { pos: Point { x: self.pos.x - w, y: self.pos.y}, size: Size { w: w, h: self.size.h } }
+    }
+    fn adjacent_right(&self, w: f32) -> Rect {
+        Rect { pos: Point { x: self.pos.x + self.size.w, y: self.pos.y}, size: Size { w: w, h: self.size.h } }
+    }
+    fn adjacent_top(&self, h: f32) -> Rect {
+        Rect { pos: Point { x: self.pos.x, y: self.pos.y - h}, size: Size { w: self.size.w, h: h } }
+    }
+    fn adjacent_bottom(&self, h: f32) -> Rect {
+        Rect { pos: Point { x: self.pos.x, y: self.pos.y + self.size.h}, size: Size { w: self.size.w, h: h } }
     }
 }
 
@@ -82,29 +104,27 @@ pub struct Velocity {
 
 #[derive(Copy, Clone, Debug)]
 pub enum State {
-    InProgress {
-        ball_pos: Point,
-        ball_v: Velocity,
-    },
+    InProgress,
     Won,
     Lost,
 }
 
 pub struct Game {
     pub state: State,
-    pub prev_update: Option<Instant>,
-    pub angle_x: f32, // Board angle w.r.t. x-axis in radians
-    pub angle_y: f32,
-    pub level: Level,
+    pub ball_pos: Point,
+    ball_v: Velocity,
+    prev_update: Option<Instant>,
+    angle_x: f32, // Board angle w.r.t. x-axis in radians
+    angle_y: f32,
+    level: Level,
 }
 
 impl Game {
     pub fn new(lvl: Level) -> Game {
         Game {
-            state: State::InProgress {
-                ball_pos: lvl.start,
-                ball_v: Velocity { x: 0.0, y: 0.0},
-            },
+            state: State::InProgress,
+            ball_pos: lvl.start,
+            ball_v: Velocity { x: 0.0, y: 0.0},
             prev_update: None,
             angle_x: 0.0,
             angle_y: 0.0,
@@ -122,28 +142,61 @@ impl Game {
 
     pub fn update(&mut self, time: Instant) {
         match self.state {
-            State::InProgress { ball_pos, ball_v } => {
-                match self.prev_update {
-                    None => {
-                        self.prev_update = Some(time);
-                    },
-                    Some(prev_time) => {
-                        let dt = time.duration_since(prev_time).as_secs_f32();
-                        let a_x = self.angle_x * ACCEL_COEFF;
-                        let a_y = self.angle_y * ACCEL_COEFF;
-                        let v_x = ball_v.x + a_x * dt;
-                        let v_y = ball_v.y + a_y * dt;
-                        let pos_x = ball_pos.x + v_x * dt;
-                        let pos_y = ball_pos.y + v_y * dt;
-                        self.state = State::InProgress {
-                            ball_pos: Point { x: pos_x, y: pos_y },
-                            ball_v: Velocity { x: v_x, y: v_y },
-                        };
-                        self.prev_update = Some(time);
-                    },
-                }
-            },
-            _ => (),
+            State::InProgress => (),
+            _ => return, // nothing to update if the game is not in progress anymore
         }
+
+        // Physics
+        let dt = time.duration_since(self.prev_update.unwrap_or(time)).as_secs_f32();
+        let mut v = Velocity {
+            x: self.ball_v.x + self.angle_x * ACCEL_COEFF * dt,
+            y: self.ball_v.y + self.angle_y * ACCEL_COEFF * dt,
+        };
+        let mut p = Point {
+            x: self.ball_pos.x + v.x * dt,
+            y: self.ball_pos.y + v.y * dt,
+        };
+
+        // Board edge collisions
+        if p.x < BALL_R { // left
+            p.x = BALL_R;
+            v.x = -BOUNCE_COEFF * v.x;
+        }
+        if p.x >= self.level.size.w - BALL_R { // right
+            p.x = self.level.size.w - BALL_R;
+            v.x = -BOUNCE_COEFF * v.x;
+        }
+        if p.y < BALL_R { // top
+            p.y = BALL_R;
+            v.y = -BOUNCE_COEFF * v.y;
+        }
+        if p.y >= self.level.size.h - BALL_R { // bottom
+            p.y = self.level.size.h - BALL_R;
+            v.y = -BOUNCE_COEFF * v.y;
+        }
+
+        // Wall collisions
+        for wall in self.level.walls.iter() {
+            if wall.adjacent_left(BALL_R).contains(p) {
+                p.x = wall.pos.x - BALL_R;
+                v.x = -BOUNCE_COEFF * v.x;
+            }
+            if wall.adjacent_right(BALL_R).contains(p) {
+                p.x = wall.pos.x + wall.size.w + BALL_R;
+                v.x = -BOUNCE_COEFF * v.x;
+            }
+            if wall.adjacent_top(BALL_R).contains(p) {
+                p.y = wall.pos.y - BALL_R;
+                v.y = -BOUNCE_COEFF * v.y;
+            }
+            if wall.adjacent_bottom(BALL_R).contains(p) {
+                p.y = wall.pos.y + wall.size.h + BALL_R;
+                v.y = -BOUNCE_COEFF * v.y;
+            }
+        }
+
+        self.ball_pos = p;
+        self.ball_v = v;
+        self.prev_update = Some(time);
     }
 }

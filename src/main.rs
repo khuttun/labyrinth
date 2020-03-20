@@ -17,8 +17,8 @@ fn main() {
     let h = display.gl_window().window().inner_size().height as f32;
 
     // let monitor = display.gl_window().window().available_monitors().next().unwrap();
-    // let w = monitor.size().width;
-    // let h = monitor.size().height;
+    // let w = monitor.size().width as f32;
+    // let h = monitor.size().height as f32;
     // display.gl_window().window().set_fullscreen(Some(glutin::window::Fullscreen::Borderless(monitor)));
 
     println!("Window size {} x {}", w, h);
@@ -58,10 +58,6 @@ fn main() {
 
     scene.set_light_position(level1.size.w / 2.0, level1.size.w.max(level1.size.h) / 2.0, level1.size.h / 2.0);
 
-    scene.look_at(
-        level1.start.x, 30.0 * game::BALL_R, level1.start.y + 30.0 * game::BALL_R,
-        level1.start.x, 0.0, level1.start.y);
-
     // Create a new game from the level and enter the main event loop
     let mut game = game::Game::new(level1);
 
@@ -78,11 +74,9 @@ fn main() {
                 WindowEvent::CursorMoved { position, .. } => {
                     let angle_x = (position.x as f32 - w / 2.0) / (w / 2.0) * (std::f32::consts::PI / 8.0);
                     let angle_y = (position.y as f32 - h / 2.0) / (h / 2.0) * (std::f32::consts::PI / 8.0);
+                    //println!("Cursor position ({}, {}) -> Board angle ({}°, {}°)", position.x, position.y, angle_x * 180.0 / std::f32::consts::PI, angle_y * 180.0 / std::f32::consts::PI);
                     game.set_x_angle(angle_x);
                     game.set_y_angle(angle_y);
-                    println!("Board angle ({}°, {}°)",
-                        angle_x * 180.0 / std::f32::consts::PI,
-                        angle_y * 180.0 / std::f32::consts::PI);
                     // -> proceed to update game state and draw
                 },
                 WindowEvent::KeyboardInput {
@@ -109,11 +103,11 @@ fn main() {
         game.update(Instant::now());
 
         match game.state {
-            game::State::InProgress { ball_pos, .. } => {
-                scene.get_object(ball_id).set_position(ball_pos.x, game::BALL_R, ball_pos.y);
+            game::State::InProgress => {
+                scene.get_object(ball_id).set_position(game.ball_pos.x, game::BALL_R, game.ball_pos.y);
                 scene.look_at(
-                    ball_pos.x, 30.0 * game::BALL_R, ball_pos.y + 30.0 * game::BALL_R,
-                    ball_pos.x, 0.0, ball_pos.y);
+                    game.ball_pos.x, 30.0 * game::BALL_R, game.ball_pos.y + 30.0 * game::BALL_R,
+                    game.ball_pos.x, 0.0, game.ball_pos.y);
             },
             _ => (),
         }
