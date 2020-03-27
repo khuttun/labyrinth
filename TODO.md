@@ -1,0 +1,14 @@
+- Draw holes
+    - Board has texture with transparent areas where the holes are?
+- Holes to game logic
+- Wall corner collisions
+- Finishing level to game logic
+- Draw tilting of the board
+    - Add possibility to form object hierarchies to Scene
+    - Form hierarchy where everything connected to the board surface are rotated together
+- Winning & losing
+    - Texts?
+    - Animate ball falling to hole?
+    - Restart current/start next level?
+- Classic BRIO level
+- Draw walls using instancing?
