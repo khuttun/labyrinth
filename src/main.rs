@@ -36,21 +36,21 @@ fn main() {
 
     let mut scene = graphics::Scene::new(&display, w / h);
 
-    let mut board = graphics::Object::new(&quad);
-    board.set_color(0.75, 0.55, 0.3);
+    let mut board = graphics::Object::new(&display, &quad);
+    board.set_texture(&display, vec![191u8, 140u8, 77u8, 255u8], (1, 1));
     board.set_scaling(level1.size.w, 1.0, level1.size.h);
     board.set_position(level1.size.w / 2.0, 0.0, level1.size.h / 2.0);
     scene.add_object(board);
 
-    let mut ball = graphics::Object::new(&sphere);
-    ball.set_color(0.6, 0.6, 0.6);
+    let mut ball = graphics::Object::new(&display, &sphere);
+    ball.set_texture(&display, vec![153u8, 153u8, 153u8, 255u8], (1, 1));
     ball.set_scaling(game::BALL_R, game::BALL_R, game::BALL_R);
     ball.set_position(level1.start.x, game::BALL_R, level1.start.y);
     let ball_id = scene.add_object(ball);
 
     for wall in level1.walls.iter() {
-        let mut obj = graphics::Object::new(&cube);
-        obj.set_color(0.1, 0.1, 0.1);
+        let mut obj = graphics::Object::new(&display, &cube);
+        obj.set_texture(&display, vec![26u8, 26u8, 26u8, 255u8], (1, 1));
         obj.set_scaling(wall.size.w, game::WALL_H, wall.size.h);
         obj.set_position(wall.pos.x + wall.size.w / 2.0, game::WALL_H / 2.0, wall.pos.y + wall.size.h / 2.0);
         scene.add_object(obj);

@@ -5,9 +5,10 @@ use std::rc::Rc;
 struct Vertex {
     position: [f32; 3],
     normal: [f32; 3],
+    tex_coords: [f32; 2],
 }
 
-glium::implement_vertex!(Vertex, position, normal);
+glium::implement_vertex!(Vertex, position, normal, tex_coords);
 
 pub struct Shape {
     vertex_buffer: glium::VertexBuffer<Vertex>,
@@ -39,7 +40,8 @@ impl Shape {
         let vertices: Vec<Vertex> = ply.payload["vertex"].iter().map(
             |v| Vertex{
                 position: [as_float(&v["x"]), as_float(&v["y"]), as_float(&v["z"])],
-                normal: [as_float(&v["nx"]), as_float(&v["ny"]), as_float(&v["nz"])]
+                normal: [as_float(&v["nx"]), as_float(&v["ny"]), as_float(&v["nz"])],
+                tex_coords: [as_float(&v["s"]), as_float(&v["t"])],
             }).collect();
 
         // println!("Vertices (length {}): {:?}", vertices.len(), vertices);
@@ -62,7 +64,7 @@ impl Shape {
 
 pub struct Object {
     shape: Rc<Shape>,
-    color: glm::Vec3,
+    texture: glium::texture::texture2d::Texture2d,
     scaling: glm::Vec3,
     rotation: (f32, glm::Vec3),
     translation: glm::Vec3,
@@ -70,10 +72,13 @@ pub struct Object {
 }
 
 impl Object {
-    pub fn new(s: &Rc<Shape>) -> Object {
+    pub fn new<F>(facade: &F, s: &Rc<Shape>) -> Object
+        where F: glium::backend::Facade
+    {
         Object {
             shape: Rc::clone(s),
-            color: glm::vec3(0.2, 0.2, 0.2),
+            texture: glium::texture::texture2d::Texture2d::new(facade, glium::texture::RawImage2d::from_raw_rgba(
+                vec![50u8, 50u8, 50u8, 255u8], (1, 1))).unwrap(),
             scaling: glm::vec3(1.0, 1.0, 1.0),
             rotation: (0.0, glm::vec3(1.0, 0.0, 0.0)),
             translation: glm::vec3(0.0, 0.0, 0.0),
@@ -81,8 +86,11 @@ impl Object {
         }
     }
 
-    pub fn set_color(&mut self, r: f32, g: f32, b: f32) {
-        self.color = glm::vec3(r, g, b);
+    pub fn set_texture<F>(&mut self, facade: &F, data: Vec<u8>, dim: (u32, u32))
+        where F: glium::backend::Facade
+    {
+        self.texture = glium::texture::texture2d::Texture2d::new(
+            facade, glium::texture::RawImage2d::from_raw_rgba(data, dim)).unwrap();
     }
 
     pub fn set_scaling(&mut self, x: f32, y: f32, z: f32) {
@@ -171,7 +179,6 @@ impl Scene {
         let light_pos_array: [f32; 3] = self.light_position.xyz().into();
         for obj in self.objects.iter() {
             let mvp_array: [[f32; 4]; 4] = (self.perspective_matrix * self.view_matrix * obj.model_matrix).into();
-            let color_array: [f32; 3] = obj.color.into();
             surface.draw(
                 &obj.shape.vertex_buffer,
                 &obj.shape.index_buffer,
@@ -179,7 +186,7 @@ impl Scene {
                 &glium::uniform! {
                     modelViewProjection: mvp_array,
                     lightPos: light_pos_array,
-                    materialColor: color_array,
+                    tex: &obj.texture,
                 },
                 &glium::DrawParameters {
                     depth: glium::Depth {
