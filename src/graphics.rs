@@ -189,6 +189,7 @@ impl Scene {
                     tex: &obj.texture,
                 },
                 &glium::DrawParameters {
+                    blend: glium::Blend::alpha_blending(),
                     depth: glium::Depth {
                         test: glium::DepthTest::IfLess,
                         write: true,
