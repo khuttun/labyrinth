@@ -62,6 +62,27 @@ impl Shape {
     }
 }
 
+pub struct Texture {
+    data: Vec<u8>,
+    w: u32,
+    h: u32,
+}
+
+impl Texture {
+    pub fn solid_color(r: u8, g: u8, b: u8) -> Texture {
+        Texture { data: vec![r, g, b, 255], w: 1, h: 1 }
+    }
+
+    fn into_glium_texture<F>(self, facade: &F) -> glium::texture::texture2d::Texture2d
+        where F: glium::backend::Facade
+    {
+        glium::texture::texture2d::Texture2d::new(
+            facade,
+            glium::texture::RawImage2d::from_raw_rgba(self.data, (self.w, self.h)),
+        ).unwrap()
+    }
+}
+
 pub struct Object {
     shape: Rc<Shape>,
     texture: glium::texture::texture2d::Texture2d,
@@ -77,8 +98,7 @@ impl Object {
     {
         Object {
             shape: Rc::clone(s),
-            texture: glium::texture::texture2d::Texture2d::new(facade, glium::texture::RawImage2d::from_raw_rgba(
-                vec![50u8, 50u8, 50u8, 255u8], (1, 1))).unwrap(),
+            texture: Texture::solid_color(50, 50, 50).into_glium_texture(facade),
             scaling: glm::vec3(1.0, 1.0, 1.0),
             rotation: (0.0, glm::vec3(1.0, 0.0, 0.0)),
             translation: glm::vec3(0.0, 0.0, 0.0),
@@ -86,11 +106,10 @@ impl Object {
         }
     }
 
-    pub fn set_texture<F>(&mut self, facade: &F, data: Vec<u8>, dim: (u32, u32))
+    pub fn set_texture<F>(&mut self, facade: &F, t: Texture)
         where F: glium::backend::Facade
     {
-        self.texture = glium::texture::texture2d::Texture2d::new(
-            facade, glium::texture::RawImage2d::from_raw_rgba(data, dim)).unwrap();
+        self.texture = t.into_glium_texture(facade);
     }
 
     pub fn set_scaling(&mut self, x: f32, y: f32, z: f32) {
