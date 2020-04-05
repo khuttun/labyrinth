@@ -62,15 +62,46 @@ impl Shape {
     }
 }
 
+pub struct TexelRef<'a> {
+    data: &'a mut [u8]
+}
+
+impl<'a> TexelRef<'a> {
+    pub fn r(&mut self) -> &mut u8 {
+        &mut self.data[0]
+    }
+
+    pub fn g(&mut self) -> &mut u8 {
+        &mut self.data[1]
+    }
+
+    pub fn b(&mut self) -> &mut u8 {
+        &mut self.data[2]
+    }
+
+    pub fn a(&mut self) -> &mut u8 {
+        &mut self.data[3]
+    }
+}
+
 pub struct Texture {
     data: Vec<u8>,
-    w: u32,
-    h: u32,
+    pub w: u32,
+    pub h: u32,
 }
 
 impl Texture {
     pub fn solid_color(r: u8, g: u8, b: u8) -> Texture {
         Texture { data: vec![r, g, b, 255], w: 1, h: 1 }
+    }
+
+    pub fn solid_color_sized(r: u8, g: u8, b: u8, w: u32, h: u32) -> Texture {
+        Texture { data: [r, g, b, 255].iter().cloned().cycle().take((4 * w * h) as usize).collect(), w: w, h: h }
+    }
+
+    pub fn texel(&mut self, u: u32, v: u32) -> TexelRef {
+        let begin = (4 * u + 4 * v * self.w) as usize;
+        TexelRef { data: &mut self.data[begin .. begin + 4] }
     }
 
     fn into_glium_texture<F>(self, facade: &F) -> glium::texture::texture2d::Texture2d
