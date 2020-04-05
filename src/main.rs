@@ -46,7 +46,7 @@ fn main() {
 
     display.gl_window().window().set_cursor_position(
         glutin::dpi::PhysicalPosition::new(w / 2.0, h / 2.0)).unwrap();
-    display.gl_window().window().set_cursor_visible(false);
+    //display.gl_window().window().set_cursor_visible(false);
 
     let quad = Rc::new(graphics::Shape::from_ply(&display, "quad.ply"));
     let cube = Rc::new(graphics::Shape::from_ply(&display, "cube.ply"));
