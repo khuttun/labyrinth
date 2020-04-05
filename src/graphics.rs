@@ -99,8 +99,8 @@ impl Texture {
         Texture { data: [r, g, b, 255].iter().cloned().cycle().take((4 * w * h) as usize).collect(), w: w, h: h }
     }
 
-    pub fn texel(&mut self, u: u32, v: u32) -> TexelRef {
-        let begin = (4 * u + 4 * v * self.w) as usize;
+    pub fn texel(&mut self, u: usize, v: usize) -> TexelRef {
+        let begin = 4 * u + 4 * v * self.w as usize;
         TexelRef { data: &mut self.data[begin .. begin + 4] }
     }
 

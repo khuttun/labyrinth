@@ -1,5 +1,3 @@
-- Draw holes
-    - Board has texture with transparent areas where the holes are?
 - Holes to game logic
 - Wall corner collisions
 - Finishing level to game logic

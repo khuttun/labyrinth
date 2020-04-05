@@ -7,6 +7,27 @@ use std::time::{Duration, Instant};
 mod game;
 mod graphics;
 
+const BOARD_TEXTURE_SIZE_FACTOR: f32 = 20.0;
+const HOLE_R_IN_TEXTURE: f32 = BOARD_TEXTURE_SIZE_FACTOR * game::HOLE_R;
+
+pub fn punch_holes(tex: &mut graphics::Texture, holes: &Vec<game::Point>) {
+    for hole in holes.iter() {
+        let u_mid = BOARD_TEXTURE_SIZE_FACTOR * hole.x;
+        let v_mid = tex.h as f32 - BOARD_TEXTURE_SIZE_FACTOR * hole.y; // board and texture coordinates have opposite y-direction
+        let u_min = (u_mid - HOLE_R_IN_TEXTURE) as usize;
+        let u_max = (u_mid + HOLE_R_IN_TEXTURE) as usize;
+        let v_min = (v_mid - HOLE_R_IN_TEXTURE) as usize;
+        let v_max = (v_mid + HOLE_R_IN_TEXTURE) as usize;
+        for u in u_min .. u_max + 1 {
+            for v in v_min .. v_max + 1 {
+                if (u_mid - u as f32).powi(2) + (v_mid - v as f32).powi(2) < HOLE_R_IN_TEXTURE.powi(2) {
+                    *tex.texel(u, v).a() = 0;
+                }
+            }
+        }
+    }
+}
+
 fn main() {
     let event_loop = glutin::event_loop::EventLoop::new();
     let wb = glutin::window::WindowBuilder::new();
@@ -37,7 +58,13 @@ fn main() {
     let mut scene = graphics::Scene::new(&display, w / h);
 
     let mut board = graphics::Object::new(&display, &quad);
-    board.set_texture(&display, graphics::Texture::solid_color(191, 140, 77));
+    let mut board_tex = graphics::Texture::solid_color_sized(
+        191, 140, 77,
+        (BOARD_TEXTURE_SIZE_FACTOR * level1.size.w) as u32,
+        (BOARD_TEXTURE_SIZE_FACTOR * level1.size.h) as u32
+    );
+    punch_holes(&mut board_tex, &level1.holes);
+    board.set_texture(&display, board_tex);
     board.set_scaling(level1.size.w, 1.0, level1.size.h);
     board.set_position(level1.size.w / 2.0, 0.0, level1.size.h / 2.0);
     scene.add_object(board);

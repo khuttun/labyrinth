@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 pub const BALL_R: f32 = 1.0;
+pub const HOLE_R: f32 = 1.25 * BALL_R;
 pub const WALL_H: f32 = 1.5;
 const ACCEL_COEFF: f32 = 100.0 / std::f32::consts::PI;
 const BOUNCE_COEFF: f32 = 0.2;
