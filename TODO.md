@@ -1,4 +1,3 @@
-- Holes to game logic
 - Wall corner collisions
 - Finishing level to game logic
 - Draw tilting of the board

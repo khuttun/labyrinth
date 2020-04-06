@@ -21,6 +21,12 @@ impl From<&json::JsonValue> for Point {
     }
 }
 
+impl Point {
+    fn distance_to(&self, other: &Point) -> f32 {
+        ((self.x - other.x).powi(2) + (self.y - other.y).powi(2)).sqrt()
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Size {
     pub w: f32,
@@ -194,6 +200,10 @@ impl Game {
                 p.y = wall.pos.y + wall.size.h + BALL_R;
                 v.y = -BOUNCE_COEFF * v.y;
             }
+        }
+
+        if self.level.holes.iter().find(|h| p.distance_to(h) < HOLE_R).is_some() {
+            self.state = State::Lost;
         }
 
         self.ball_pos = p;
