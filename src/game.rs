@@ -202,6 +202,10 @@ impl Game {
             }
         }
 
+        if self.level.end.contains(p) {
+            self.state = State::Won;
+        }
+
         if self.level.holes.iter().find(|h| p.distance_to(h) < HOLE_R).is_some() {
             self.state = State::Lost;
         }

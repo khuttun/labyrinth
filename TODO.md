@@ -1,5 +1,4 @@
 - Wall corner collisions
-- Finishing level to game logic
 - Draw tilting of the board
     - Add possibility to form object hierarchies to Scene
     - Form hierarchy where everything connected to the board surface are rotated together
