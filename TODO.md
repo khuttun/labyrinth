@@ -1,4 +1,3 @@
-- Wall corner collisions
 - Draw tilting of the board
     - Add possibility to form object hierarchies to Scene
     - Form hierarchy where everything connected to the board surface are rotated together
@@ -7,4 +6,3 @@
     - Animate ball falling to hole?
     - Restart current/start next level?
 - Classic BRIO level
-- Draw walls using instancing?

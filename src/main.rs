@@ -2,6 +2,7 @@
 extern crate glium;
 use glium::glutin;
 use glutin::event::{Event, StartCause, WindowEvent};
+use std::f32::consts::PI;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 mod game;
@@ -99,9 +100,9 @@ fn main() {
                     return;
                 },
                 WindowEvent::CursorMoved { position, .. } => {
-                    let angle_x = (position.x as f32 - w / 2.0) / (w / 2.0) * (std::f32::consts::PI / 8.0);
-                    let angle_y = (position.y as f32 - h / 2.0) / (h / 2.0) * (std::f32::consts::PI / 8.0);
-                    //println!("Cursor position ({}, {}) -> Board angle ({}°, {}°)", position.x, position.y, angle_x * 180.0 / std::f32::consts::PI, angle_y * 180.0 / std::f32::consts::PI);
+                    let angle_x = (position.x as f32 - w / 2.0) / (w / 2.0) * (PI / 8.0);
+                    let angle_y = (position.y as f32 - h / 2.0) / (h / 2.0) * (PI / 8.0);
+                    //println!("Cursor position ({}, {}) -> Board angle ({}°, {}°)", position.x, position.y, angle_x * 180.0 / PI, angle_y * 180.0 / PI);
                     game.set_x_angle(angle_x);
                     game.set_y_angle(angle_y);
                     // -> proceed to update game state and draw
