@@ -67,43 +67,6 @@ impl Rect {
     fn contains(&self, p: &Point) -> bool {
         p.x >= self.pos.x && p.x < self.pos.x + self.size.w && p.y >= self.pos.y && p.y < self.pos.y + self.size.h
     }
-
-    // Functions for creating a new Rect sharing an edge with self
-    fn adjacent_left(&self, w: f32) -> Rect {
-        Rect { pos: Point { x: self.pos.x - w, y: self.pos.y}, size: Size { w: w, h: self.size.h } }
-    }
-    fn adjacent_right(&self, w: f32) -> Rect {
-        Rect { pos: Point { x: self.pos.x + self.size.w, y: self.pos.y}, size: Size { w: w, h: self.size.h } }
-    }
-    fn adjacent_top(&self, h: f32) -> Rect {
-        Rect { pos: Point { x: self.pos.x, y: self.pos.y - h}, size: Size { w: self.size.w, h: h } }
-    }
-    fn adjacent_bottom(&self, h: f32) -> Rect {
-        Rect { pos: Point { x: self.pos.x, y: self.pos.y + self.size.h}, size: Size { w: self.size.w, h: h } }
-    }
-
-    // Functions for getting the Rect corner points
-    fn top_left(&self) -> Point {
-        self.pos
-    }
-    fn top_right(&self) -> Point {
-        Point {
-            x: self.pos.x + self.size.w,
-            y: self.pos.y,
-        }
-    }
-    fn bottom_left(&self) -> Point {
-        Point {
-            x: self.pos.x,
-            y: self.pos.y + self.size.h,
-        }
-    }
-    fn bottom_right(&self) -> Point {
-        Point {
-            x: self.pos.x + self.size.w,
-            y: self.pos.y + self.size.h,
-        }
-    }
 }
 
 // Level coordinate system origin is in top-left corner of the board.
@@ -181,17 +144,37 @@ impl Game {
             _ => return, // nothing to update if the game is not in progress anymore
         }
 
-        // Physics
+        let (p, v) = self.detect_collisions(self.do_physics(time));
+        
+        if self.level.end.contains(&p) {
+            self.state = State::Won;
+        }
+
+        if self.level.holes.iter().find(|h| p.distance_to(h) < HOLE_R).is_some() {
+            self.state = State::Lost;
+        }
+
+        self.prev_update = Some(time);
+        self.ball_pos = p;
+        self.ball_v = v;
+    }
+
+    fn do_physics(&self, time: Instant) -> (Point, Velocity) {
         let dt = time.duration_since(self.prev_update.unwrap_or(time)).as_secs_f32();
-        let mut v = Velocity {
+
+        let v = Velocity {
             x: self.ball_v.x + self.angle_x * ACCEL_COEFF * dt,
             y: self.ball_v.y + self.angle_y * ACCEL_COEFF * dt,
         };
-        let mut p = Point {
+        let p = Point {
             x: self.ball_pos.x + v.x * dt,
             y: self.ball_pos.y + v.y * dt,
         };
 
+        (p, v)
+    }
+
+    fn detect_collisions(&self, (mut p, mut v): (Point, Velocity)) -> (Point, Velocity) {
         // Board edge collisions
         if p.x < BALL_R { // left
             bounce_x(&mut p, &mut v, BALL_R);
@@ -208,31 +191,49 @@ impl Game {
 
         // Wall collisions
         for wall in self.level.walls.iter() {
-            if collides_left(&p, wall) {
-                bounce_x(&mut p, &mut v, wall.pos.x - BALL_R);
-            }
-            else if collides_right(&p, wall) {
-                bounce_x(&mut p, &mut v, wall.pos.x + wall.size.w + BALL_R);
-            }
-            else if collides_top(&p, wall) {
-                bounce_y(&mut p, &mut v, wall.pos.y - BALL_R);
-            }
-            else if collides_bottom(&p, wall) {
-                bounce_y(&mut p, &mut v, wall.pos.y + wall.size.h + BALL_R);
+            match detect_wall_collision(&p, wall) {
+                Some(WallEdge::Left) => bounce_x(&mut p, &mut v, wall.pos.x - BALL_R),
+                Some(WallEdge::Right) => bounce_x(&mut p, &mut v, wall.pos.x + wall.size.w + BALL_R),
+                Some(WallEdge::Top) => bounce_y(&mut p, &mut v, wall.pos.y - BALL_R),
+                Some(WallEdge::Bottom) => bounce_y(&mut p, &mut v, wall.pos.y + wall.size.h + BALL_R),
+                None => (),
             }
         }
 
-        if self.level.end.contains(&p) {
-            self.state = State::Won;
-        }
+        (p, v)
+    }
+}
 
-        if self.level.holes.iter().find(|h| p.distance_to(h) < HOLE_R).is_some() {
-            self.state = State::Lost;
-        }
+enum WallEdge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
 
-        self.ball_pos = p;
-        self.ball_v = v;
-        self.prev_update = Some(time);
+fn detect_wall_collision(ball_pos: &Point, wall: &Rect) -> Option<WallEdge> {
+    let wall_half_size = Size { w: wall.size.w / 2.0, h: wall.size.h / 2.0 };
+    let wall_center = Point { x: wall.pos.x + wall_half_size.w, y: wall.pos.y + wall_half_size.h };
+    let closest_point_in_wall = Point {
+        x: wall_center.x + clamp(ball_pos.x - wall_center.x, -wall_half_size.w, wall_half_size.w),
+        y: wall_center.y + clamp(ball_pos.y - wall_center.y, -wall_half_size.h, wall_half_size.h),
+    };
+
+    if ball_pos.distance_to(&closest_point_in_wall) < BALL_R {
+        Some(angle_to_wall_edge(closest_point_in_wall.angle_to(ball_pos)))
+    }
+    else {
+        None
+    }
+}
+
+fn angle_to_wall_edge(a: f32) -> WallEdge {
+    match a {
+        a if a < -3.0 * PI / 4.0 => WallEdge::Left,
+        a if a < -PI / 4.0 => WallEdge::Top,
+        a if a < PI / 4.0 => WallEdge:: Right,
+        a if a < 3.0 * PI / 4.0 => WallEdge::Bottom,
+        _ => WallEdge::Left,
     }
 }
 
@@ -246,49 +247,12 @@ fn bounce_y(pos: &mut Point, vel: &mut Velocity, edge_y: f32) {
     vel.y = -BOUNCE_COEFF * vel.y;
 }
 
-trait InRangeExt {
-    fn is_in_range(self, a: Self, b: Self) -> bool;
-}
-impl InRangeExt for f32 {
-    fn is_in_range(self, a: f32, b: f32) -> bool {
-        self >= a && self < b
+fn clamp(x: f32, min: f32, max: f32) -> f32 {
+    match x {
+        x if x < min => min,
+        x if x > max => max,
+        _ => x,
     }
-}
-
-// Ball is considered to be colliding with a wall edge, if it's
-// - adjacent to the edge with position < ball radius from the edge, or
-// - within the 1/8 circle of the same radius as the ball in either end of the edge
-
-fn collides_left(ball_pos: &Point, wall: &Rect) -> bool {
-    wall.adjacent_left(BALL_R).contains(ball_pos)
-        || (wall.top_left().distance_to(ball_pos) < BALL_R
-            && wall.top_left().angle_to(ball_pos).is_in_range(-PI, -3.0 * PI / 4.0))
-        || (wall.bottom_left().distance_to(ball_pos) < BALL_R
-            && wall.bottom_left().angle_to(ball_pos).is_in_range(3.0 * PI / 4.0, PI))
-}
-
-fn collides_right(ball_pos: &Point, wall: &Rect) -> bool {
-    wall.adjacent_right(BALL_R).contains(ball_pos)
-        || (wall.top_right().distance_to(ball_pos) < BALL_R
-            && wall.top_right().angle_to(ball_pos).is_in_range(-PI / 4.0, 0.0))
-        || (wall.bottom_right().distance_to(ball_pos) < BALL_R
-            && wall.bottom_right().angle_to(ball_pos).is_in_range(0.0, PI / 4.0))
-}
-
-fn collides_top(ball_pos: &Point, wall: &Rect) -> bool {
-    wall.adjacent_top(BALL_R).contains(ball_pos)
-        || (wall.top_left().distance_to(ball_pos) < BALL_R
-            && wall.top_left().angle_to(ball_pos).is_in_range(-3.0 * PI / 4.0, -PI / 2.0))
-        || (wall.top_right().distance_to(ball_pos) < BALL_R
-            && wall.top_right().angle_to(ball_pos).is_in_range(-PI / 2.0, -PI / 4.0))
-}
-
-fn collides_bottom(ball_pos: &Point, wall: &Rect) -> bool {
-    wall.adjacent_bottom(BALL_R).contains(ball_pos)
-        || (wall.bottom_left().distance_to(ball_pos) < BALL_R
-            && wall.bottom_left().angle_to(ball_pos).is_in_range(PI / 2.0, 3.0 * PI / 4.0))
-        || (wall.bottom_right().distance_to(ball_pos) < BALL_R
-            && wall.bottom_right().angle_to(ball_pos).is_in_range(PI / 4.0, PI / 2.0))
 }
 
 #[cfg(test)]
