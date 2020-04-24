@@ -1,7 +1,6 @@
-- Fixed timestep physics
 - Draw tilting of the board
-    - Add possibility to form object hierarchies to Scene
     - Form hierarchy where everything connected to the board surface are rotated together
+- Fixed timestep physics
 - Winning & losing
     - Texts?
     - Animate ball falling to hole?

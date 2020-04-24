@@ -168,8 +168,39 @@ impl Object {
 
 pub type ObjectId = usize;
 
+struct SceneObject {
+    object: Object,
+    parent: Option<ObjectId>,
+}
+
+// Iterate scene object hierarchy towards the root
+struct SceneObjectHierarchyIterator<'a> {
+    objects: &'a Vec<SceneObject>,
+    current: Option<ObjectId>,
+}
+
+impl<'a> SceneObjectHierarchyIterator<'a> {
+    fn new(scene: &'a Scene, id: ObjectId) -> Self {
+        SceneObjectHierarchyIterator { objects: &scene.objects, current: Some(id) }
+    }
+}
+
+impl<'a> Iterator for SceneObjectHierarchyIterator<'a> {
+    type Item = &'a Object;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.current {
+            None => None,
+            Some(id) => {
+                let scobj = &self.objects[id];
+                self.current = scobj.parent;
+                Some(&scobj.object)
+            }
+        }
+    }
+}
+
 pub struct Scene {
-    objects: Vec<Object>,
+    objects: Vec<SceneObject>,
     view_matrix: glm::Mat4x4,
     perspective_matrix: glm::Mat4x4,
     light_position: glm::Vec4,
@@ -201,13 +232,13 @@ impl Scene {
         }
     }
 
-    pub fn add_object(&mut self, obj: Object) -> ObjectId {
-        self.objects.push(obj);
+    pub fn add_object(&mut self, obj: Object, prnt: Option<ObjectId>) -> ObjectId {
+        self.objects.push(SceneObject {object: obj, parent: prnt });
         self.objects.len() - 1
     }
 
     pub fn get_object(&mut self, id: ObjectId) -> &mut Object {
-        &mut self.objects[id]
+        &mut self.objects[id].object
     }
 
     pub fn look_at(&mut self, cam_x: f32, cam_y: f32, cam_z: f32, center_x: f32, center_y: f32, center_z: f32) {
@@ -227,16 +258,18 @@ impl Scene {
         surface.clear_color_and_depth((0.0, 0.0, 0.0, 1.0), 1.0);
 
         let light_pos_array: [f32; 3] = self.light_position.xyz().into();
-        for obj in self.objects.iter() {
-            let mvp_array: [[f32; 4]; 4] = (self.perspective_matrix * self.view_matrix * obj.model_matrix).into();
+        for (id, scobj) in self.objects.iter().enumerate() {
+            let effective_model_matrix = SceneObjectHierarchyIterator::new(self, id)
+                .fold(glm::identity(), |acc, obj| obj.model_matrix * acc);
+            let mvp_array: [[f32; 4]; 4] = (self.perspective_matrix * self.view_matrix * effective_model_matrix).into();
             surface.draw(
-                &obj.shape.vertex_buffer,
-                &obj.shape.index_buffer,
+                &scobj.object.shape.vertex_buffer,
+                &scobj.object.shape.index_buffer,
                 &self.default_shaders,
                 &glium::uniform! {
                     modelViewProjection: mvp_array,
                     lightPos: light_pos_array,
-                    tex: &obj.texture,
+                    tex: &scobj.object.texture,
                 },
                 &glium::DrawParameters {
                     blend: glium::Blend::alpha_blending(),
