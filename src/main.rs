@@ -58,7 +58,7 @@ fn main() {
 
     let mut scene = graphics::Scene::new(&display, w / h);
 
-    let mut board = graphics::Object::new(&display, &quad);
+    let mut board = graphics::Node::object(&display, &quad);
     let mut board_tex = graphics::Texture::solid_color_sized(
         191, 140, 77,
         (BOARD_TEXTURE_SIZE_FACTOR * level1.size.w) as u32,
@@ -68,20 +68,20 @@ fn main() {
     board.set_texture(&display, board_tex);
     board.set_scaling(level1.size.w, 1.0, level1.size.h);
     board.set_position(level1.size.w / 2.0, 0.0, level1.size.h / 2.0);
-    scene.add_object(board, None);
+    scene.add_node(board, None);
 
-    let mut ball = graphics::Object::new(&display, &sphere);
+    let mut ball = graphics::Node::object(&display, &sphere);
     ball.set_texture(&display, graphics::Texture::solid_color(153, 153, 153));
     ball.set_scaling(game::BALL_R, game::BALL_R, game::BALL_R);
     ball.set_position(level1.start.x, game::BALL_R, level1.start.y);
-    let ball_id = scene.add_object(ball, None);
+    let ball_id = scene.add_node(ball, None);
 
     for wall in level1.walls.iter() {
-        let mut obj = graphics::Object::new(&display, &cube);
+        let mut obj = graphics::Node::object(&display, &cube);
         obj.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
         obj.set_scaling(wall.size.w, game::WALL_H, wall.size.h);
         obj.set_position(wall.pos.x + wall.size.w / 2.0, game::WALL_H / 2.0, wall.pos.y + wall.size.h / 2.0);
-        scene.add_object(obj, None);
+        scene.add_node(obj, None);
     }
 
     scene.set_light_position(level1.size.w / 2.0, level1.size.w.max(level1.size.h) / 2.0, level1.size.h / 2.0);
@@ -132,7 +132,7 @@ fn main() {
 
         match game.state {
             game::State::InProgress => {
-                scene.get_object(ball_id).set_position(game.ball_pos.x, game::BALL_R, game.ball_pos.y);
+                scene.get_node(ball_id).set_position(game.ball_pos.x, game::BALL_R, game.ball_pos.y);
                 scene.look_at(
                     game.ball_pos.x, 30.0 * game::BALL_R, game.ball_pos.y + 30.0 * game::BALL_R,
                     game.ball_pos.x, 0.0, game.ball_pos.y);

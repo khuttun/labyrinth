@@ -114,33 +114,44 @@ impl Texture {
     }
 }
 
-pub struct Object {
-    shape: Rc<Shape>,
-    texture: glium::texture::texture2d::Texture2d,
+enum NodeKind {
+    Object {
+        shape: Rc<Shape>,
+        texture: glium::texture::texture2d::Texture2d,
+    },
+    Transformation,
+}
+
+pub struct Node {
+    kind: NodeKind,
     scaling: glm::Vec3,
     rotation: (f32, glm::Vec3),
     translation: glm::Vec3,
     model_matrix: glm::Mat4x4,
 }
 
-impl Object {
-    pub fn new<F>(facade: &F, s: &Rc<Shape>) -> Object
+impl Node {
+    pub fn object<F>(facade: &F, s: &Rc<Shape>) -> Node
         where F: glium::backend::Facade
     {
-        Object {
+        Node::new(NodeKind::Object {
             shape: Rc::clone(s),
             texture: Texture::solid_color(50, 50, 50).into_glium_texture(facade),
+        })
+    }
+
+    pub fn transformation() -> Node {
+        Node::new(NodeKind::Transformation)
+    }
+
+    fn new(kind: NodeKind) -> Node {
+        Node {
+            kind: kind,
             scaling: glm::vec3(1.0, 1.0, 1.0),
             rotation: (0.0, glm::vec3(1.0, 0.0, 0.0)),
             translation: glm::vec3(0.0, 0.0, 0.0),
             model_matrix: glm::identity(),
         }
-    }
-
-    pub fn set_texture<F>(&mut self, facade: &F, t: Texture)
-        where F: glium::backend::Facade
-    {
-        self.texture = t.into_glium_texture(facade);
     }
 
     pub fn set_scaling(&mut self, x: f32, y: f32, z: f32) {
@@ -158,6 +169,15 @@ impl Object {
         self.update_model_matrix();
     }
 
+    pub fn set_texture<F>(&mut self, facade: &F, t: Texture)
+        where F: glium::backend::Facade
+    {
+        match &mut self.kind {
+            NodeKind::Object { shape: _, texture } => *texture = t.into_glium_texture(facade),
+            NodeKind::Transformation => panic!("Can't set texture for transformation node"),
+        }
+    }
+
     fn update_model_matrix(&mut self) {
         self.model_matrix =
             glm::translation(&self.translation) *
@@ -166,41 +186,41 @@ impl Object {
     }
 }
 
-pub type ObjectId = usize;
+pub type NodeId = usize;
 
-struct SceneObject {
-    object: Object,
-    parent: Option<ObjectId>,
+struct SceneNode {
+    node: Node,
+    parent: Option<NodeId>,
 }
 
-// Iterate scene object hierarchy towards the root
-struct SceneObjectHierarchyIterator<'a> {
-    objects: &'a Vec<SceneObject>,
-    current: Option<ObjectId>,
+// Iterate scene nodes towards the root
+struct SceneIterator<'a> {
+    nodes: &'a Vec<SceneNode>,
+    next: Option<NodeId>,
 }
 
-impl<'a> SceneObjectHierarchyIterator<'a> {
-    fn new(scene: &'a Scene, id: ObjectId) -> Self {
-        SceneObjectHierarchyIterator { objects: &scene.objects, current: Some(id) }
+impl<'a> SceneIterator<'a> {
+    fn new(scene: &'a Scene, id: NodeId) -> Self {
+        SceneIterator { nodes: &scene.nodes, next: Some(id) }
     }
 }
 
-impl<'a> Iterator for SceneObjectHierarchyIterator<'a> {
-    type Item = &'a Object;
+impl<'a> Iterator for SceneIterator<'a> {
+    type Item = &'a Node;
     fn next(&mut self) -> Option<Self::Item> {
-        match self.current {
+        match self.next {
             None => None,
             Some(id) => {
-                let scobj = &self.objects[id];
-                self.current = scobj.parent;
-                Some(&scobj.object)
+                let n = &self.nodes[id];
+                self.next = n.parent;
+                Some(&n.node)
             }
         }
     }
 }
 
 pub struct Scene {
-    objects: Vec<SceneObject>,
+    nodes: Vec<SceneNode>,
     view_matrix: glm::Mat4x4,
     perspective_matrix: glm::Mat4x4,
     light_position: glm::Vec4,
@@ -212,7 +232,7 @@ impl Scene {
         where F: glium::backend::Facade
     {
         Scene {
-            objects: Vec::new(),
+            nodes: Vec::new(),
             view_matrix: glm::look_at(&glm::vec3(0.0, 5.0, 5.0), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0)),
             perspective_matrix: glm::perspective(aspect, glm::radians(&glm::vec1(45.0)).x, 0.1, 100.0),
             light_position: glm::vec4(0.0, 5.0, 0.0, 1.0),
@@ -232,13 +252,13 @@ impl Scene {
         }
     }
 
-    pub fn add_object(&mut self, obj: Object, prnt: Option<ObjectId>) -> ObjectId {
-        self.objects.push(SceneObject {object: obj, parent: prnt });
-        self.objects.len() - 1
+    pub fn add_node(&mut self, node: Node, parent: Option<NodeId>) -> NodeId {
+        self.nodes.push(SceneNode {node: node, parent: parent });
+        self.nodes.len() - 1
     }
 
-    pub fn get_object(&mut self, id: ObjectId) -> &mut Object {
-        &mut self.objects[id].object
+    pub fn get_node(&mut self, id: NodeId) -> &mut Node {
+        &mut self.nodes[id].node
     }
 
     pub fn look_at(&mut self, cam_x: f32, cam_y: f32, cam_z: f32, center_x: f32, center_y: f32, center_z: f32) {
@@ -258,29 +278,35 @@ impl Scene {
         surface.clear_color_and_depth((0.0, 0.0, 0.0, 1.0), 1.0);
 
         let light_pos_array: [f32; 3] = self.light_position.xyz().into();
-        for (id, scobj) in self.objects.iter().enumerate() {
-            let effective_model_matrix = SceneObjectHierarchyIterator::new(self, id)
-                .fold(glm::identity(), |acc, obj| obj.model_matrix * acc);
-            let mvp_array: [[f32; 4]; 4] = (self.perspective_matrix * self.view_matrix * effective_model_matrix).into();
-            surface.draw(
-                &scobj.object.shape.vertex_buffer,
-                &scobj.object.shape.index_buffer,
-                &self.default_shaders,
-                &glium::uniform! {
-                    modelViewProjection: mvp_array,
-                    lightPos: light_pos_array,
-                    tex: &scobj.object.texture,
+        for (id, n) in self.nodes.iter().enumerate() {
+            match &n.node.kind {
+                NodeKind::Object { shape, texture } => {
+                    let effective_model_matrix = SceneIterator::new(self, id)
+                        .fold(glm::identity(), |acc, node| node.model_matrix * acc);
+                    let mvp_array: [[f32; 4]; 4] = (self.perspective_matrix * self.view_matrix * effective_model_matrix).into();
+                    surface.draw(
+                        &shape.vertex_buffer,
+                        &shape.index_buffer,
+                        &self.default_shaders,
+                        &glium::uniform! {
+                            modelViewProjection: mvp_array,
+                            lightPos: light_pos_array,
+                            tex: texture,
+                        },
+                        &glium::DrawParameters {
+                            blend: glium::Blend::alpha_blending(),
+                            depth: glium::Depth {
+                                test: glium::DepthTest::IfLess,
+                                write: true,
+                                .. Default::default()
+                            },
+                            backface_culling: glium::draw_parameters::BackfaceCullingMode::CullClockwise,
+                            .. Default::default()
+                        }
+                    ).unwrap();
                 },
-                &glium::DrawParameters {
-                    blend: glium::Blend::alpha_blending(),
-                    depth: glium::Depth {
-                        test: glium::DepthTest::IfLess,
-                        write: true,
-                        .. Default::default()
-                    },
-                    backface_culling: glium::draw_parameters::BackfaceCullingMode::CullClockwise,
-                    .. Default::default()
-                }).unwrap();
+                NodeKind::Transformation => (), // nothing to draw
+            }
         }
     }
 }
