@@ -56,35 +56,44 @@ fn main() {
     // Create a level and set up the scene based on it
     let level1 = game::Level::from_json("level1.json");
 
+    let level1_half_w = level1.size.w / 2.0;
+    let level1_half_h = level1.size.h / 2.0;
+
     let mut scene = graphics::Scene::new(&display, w / h);
 
-    let mut board = graphics::Node::object(&display, &quad);
+    let board = graphics::Node::transformation();
+    let board_id = scene.add_node(board, None);
+
+    let mut board_surface = graphics::Node::object(&display, &quad);
     let mut board_tex = graphics::Texture::solid_color_sized(
         191, 140, 77,
         (BOARD_TEXTURE_SIZE_FACTOR * level1.size.w) as u32,
         (BOARD_TEXTURE_SIZE_FACTOR * level1.size.h) as u32
     );
     punch_holes(&mut board_tex, &level1.holes);
-    board.set_texture(&display, board_tex);
-    board.set_scaling(level1.size.w, 1.0, level1.size.h);
-    board.set_position(level1.size.w / 2.0, 0.0, level1.size.h / 2.0);
-    scene.add_node(board, None);
+    board_surface.set_texture(&display, board_tex);
+    board_surface.set_scaling(level1.size.w, 1.0, level1.size.h);
+    scene.add_node(board_surface, Some(board_id));
 
     let mut ball = graphics::Node::object(&display, &sphere);
     ball.set_texture(&display, graphics::Texture::solid_color(153, 153, 153));
     ball.set_scaling(game::BALL_R, game::BALL_R, game::BALL_R);
-    ball.set_position(level1.start.x, game::BALL_R, level1.start.y);
-    let ball_id = scene.add_node(ball, None);
+    ball.set_position(level1.start.x - level1_half_w, game::BALL_R, level1.start.y - level1_half_h);
+    let ball_id = scene.add_node(ball, Some(board_id));
 
     for wall in level1.walls.iter() {
         let mut obj = graphics::Node::object(&display, &cube);
         obj.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
         obj.set_scaling(wall.size.w, game::WALL_H, wall.size.h);
-        obj.set_position(wall.pos.x + wall.size.w / 2.0, game::WALL_H / 2.0, wall.pos.y + wall.size.h / 2.0);
-        scene.add_node(obj, None);
+        obj.set_position(
+            wall.pos.x - level1_half_w + wall.size.w / 2.0,
+            game::WALL_H / 2.0,
+            wall.pos.y - level1_half_h + wall.size.h / 2.0,
+        );
+        scene.add_node(obj, Some(board_id));
     }
 
-    scene.set_light_position(level1.size.w / 2.0, level1.size.w.max(level1.size.h) / 2.0, level1.size.h / 2.0);
+    scene.set_light_position(level1_half_w, level1_half_w.max(level1_half_h), level1_half_h);
 
     // Create a new game from the level and enter the main event loop
     let mut game = game::Game::new(level1);
@@ -100,11 +109,12 @@ fn main() {
                     return;
                 },
                 WindowEvent::CursorMoved { position, .. } => {
-                    let angle_x = (position.x as f32 - w / 2.0) / (w / 2.0) * (PI / 8.0);
-                    let angle_y = (position.y as f32 - h / 2.0) / (h / 2.0) * (PI / 8.0);
+                    let angle_x = (position.x as f32 - w / 2.0) / (w / 2.0) * (PI / 32.0);
+                    let angle_y = (position.y as f32 - h / 2.0) / (h / 2.0) * (PI / 32.0);
                     //println!("Cursor position ({}, {}) -> Board angle ({}°, {}°)", position.x, position.y, angle_x * 180.0 / PI, angle_y * 180.0 / PI);
                     game.set_x_angle(angle_x);
                     game.set_y_angle(angle_y);
+                    scene.get_node(board_id).set_rotation(angle_y, 0.0, -angle_x);
                     // -> proceed to update game state and draw
                 },
                 WindowEvent::KeyboardInput {
@@ -132,10 +142,10 @@ fn main() {
 
         match game.state {
             game::State::InProgress => {
-                scene.get_node(ball_id).set_position(game.ball_pos.x, game::BALL_R, game.ball_pos.y);
+                scene.get_node(ball_id).set_position(game.ball_pos.x - level1_half_w, game::BALL_R, game.ball_pos.y - level1_half_h);
                 scene.look_at(
-                    game.ball_pos.x, 30.0 * game::BALL_R, game.ball_pos.y + 30.0 * game::BALL_R,
-                    game.ball_pos.x, 0.0, game.ball_pos.y);
+                    game.ball_pos.x - level1_half_w, 30.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 30.0 * game::BALL_R,
+                    game.ball_pos.x - level1_half_w, 0.0, game.ball_pos.y - level1_half_h);
             },
             _ => (),
         }

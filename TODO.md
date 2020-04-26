@@ -1,6 +1,3 @@
-- Draw tilting of the board
-    - Form hierarchy where everything connected to the board surface are rotated together
-        - One common Transformation node as the parent of all board Objects rotating together
 - Fixed timestep physics
 - Winning & losing
     - Texts?

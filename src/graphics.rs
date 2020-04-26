@@ -159,8 +159,9 @@ impl Node {
         self.update_model_matrix();
     }
 
-    pub fn set_rotation(&mut self, angle_rad: f32, x: f32, y: f32, z: f32) {
-        self.rotation = (angle_rad, glm::vec3(x, y, z));
+    pub fn set_rotation(&mut self, x_angle: f32, y_angle: f32, z_angle: f32) {
+        let axis = glm::vec3(x_angle, y_angle, z_angle);
+        self.rotation = (glm::length(&axis), axis);
         self.update_model_matrix();
     }
 
