@@ -61,6 +61,33 @@ fn main() {
 
     let mut scene = graphics::Scene::new(&display, w / h);
 
+    let outer_wall_w = game::BALL_R;
+    let outer_wall_h = 8.0 * game::BALL_R;
+
+    let mut left_outer_wall = graphics::Node::object(&display, &cube);
+    left_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
+    left_outer_wall.set_scaling(outer_wall_w, outer_wall_h, level1.size.h);
+    left_outer_wall.set_position(-level1_half_w - outer_wall_w / 2.0, 0.0, 0.0);
+    scene.add_node(left_outer_wall, None);
+
+    let mut right_outer_wall = graphics::Node::object(&display, &cube);
+    right_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
+    right_outer_wall.set_scaling(outer_wall_w, outer_wall_h, level1.size.h);
+    right_outer_wall.set_position(level1_half_w + outer_wall_w / 2.0, 0.0, 0.0);
+    scene.add_node(right_outer_wall, None);
+
+    let mut top_outer_wall = graphics::Node::object(&display, &cube);
+    top_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
+    top_outer_wall.set_scaling(level1.size.w + 2.0 * outer_wall_w, outer_wall_h, outer_wall_w);
+    top_outer_wall.set_position(0.0, 0.0, -level1_half_h - outer_wall_w / 2.0);
+    scene.add_node(top_outer_wall, None);
+
+    let mut bottom_outer_wall = graphics::Node::object(&display, &cube);
+    bottom_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
+    bottom_outer_wall.set_scaling(level1.size.w + 2.0 * outer_wall_w, outer_wall_h, outer_wall_w);
+    bottom_outer_wall.set_position(0.0, 0.0, level1_half_h + outer_wall_w / 2.0);
+    scene.add_node(bottom_outer_wall, None);
+
     let board = graphics::Node::transformation();
     let board_id = scene.add_node(board, None);
 
@@ -144,7 +171,7 @@ fn main() {
             game::State::InProgress => {
                 scene.get_node(ball_id).set_position(game.ball_pos.x - level1_half_w, game::BALL_R, game.ball_pos.y - level1_half_h);
                 scene.look_at(
-                    game.ball_pos.x - level1_half_w, 30.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 30.0 * game::BALL_R,
+                    game.ball_pos.x - level1_half_w, 50.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 20.0 * game::BALL_R,
                     game.ball_pos.x - level1_half_w, 0.0, game.ball_pos.y - level1_half_h);
             },
             _ => (),
