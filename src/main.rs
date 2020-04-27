@@ -11,6 +11,43 @@ mod graphics;
 const BOARD_TEXTURE_SIZE_FACTOR: f32 = 20.0;
 const HOLE_R_IN_TEXTURE: f32 = BOARD_TEXTURE_SIZE_FACTOR * game::HOLE_R;
 
+enum Side {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+fn board_wall(side: Side, board_size: &game::Size, display: &glium::Display, shape: &Rc<graphics::Shape>) -> graphics::Node {
+    let mut node = graphics::Node::object(display, shape);
+    node.set_texture(display, graphics::Texture::solid_color(191, 140, 77));
+    node.set_scaling(
+        match side {
+            Side::Left | Side::Right => game::BALL_R,
+            Side::Top | Side::Bottom => board_size.w + 2.0 * game::BALL_R,
+        },
+        game::WALL_H,
+        match side {
+            Side::Left | Side::Right => board_size.h,
+            Side::Top | Side::Bottom => game::BALL_R,
+        },
+    );
+    node.set_position(
+        match side {
+            Side::Left => -board_size.w / 2.0 - game::BALL_R / 2.0,
+            Side::Right => board_size.w / 2.0 + game::BALL_R / 2.0,
+            Side::Top | Side::Bottom => 0.0,
+        },
+        game::WALL_H / 2.0,
+        match side {
+            Side::Left | Side::Right  => 0.0,
+            Side::Top => board_size.h / 2.0 + game::BALL_R / 2.0,
+            Side::Bottom => -board_size.h / 2.0 - game::BALL_R / 2.0,
+        },
+    );
+    return node;
+}
+
 pub fn punch_holes(tex: &mut graphics::Texture, holes: &Vec<game::Point>) {
     for hole in holes.iter() {
         let u_mid = BOARD_TEXTURE_SIZE_FACTOR * hole.x;
@@ -61,36 +98,38 @@ fn main() {
 
     let mut scene = graphics::Scene::new(&display, w / h);
 
-    let outer_wall_w = game::BALL_R;
-    let outer_wall_h = 8.0 * game::BALL_R;
+    // let outer_wall_w = game::BALL_R;
+    // let outer_wall_h = 8.0 * game::BALL_R;
 
-    let mut left_outer_wall = graphics::Node::object(&display, &cube);
-    left_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
-    left_outer_wall.set_scaling(outer_wall_w, outer_wall_h, level1.size.h);
-    left_outer_wall.set_position(-level1_half_w - outer_wall_w / 2.0, 0.0, 0.0);
-    scene.add_node(left_outer_wall, None);
+    // let mut left_outer_wall = graphics::Node::object(&display, &cube);
+    // left_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
+    // left_outer_wall.set_scaling(outer_wall_w, outer_wall_h, level1.size.h);
+    // left_outer_wall.set_position(-level1_half_w - outer_wall_w / 2.0, 0.0, 0.0);
+    // scene.add_node(left_outer_wall, None);
 
-    let mut right_outer_wall = graphics::Node::object(&display, &cube);
-    right_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
-    right_outer_wall.set_scaling(outer_wall_w, outer_wall_h, level1.size.h);
-    right_outer_wall.set_position(level1_half_w + outer_wall_w / 2.0, 0.0, 0.0);
-    scene.add_node(right_outer_wall, None);
+    // let mut right_outer_wall = graphics::Node::object(&display, &cube);
+    // right_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
+    // right_outer_wall.set_scaling(outer_wall_w, outer_wall_h, level1.size.h);
+    // right_outer_wall.set_position(level1_half_w + outer_wall_w / 2.0, 0.0, 0.0);
+    // scene.add_node(right_outer_wall, None);
 
-    let mut top_outer_wall = graphics::Node::object(&display, &cube);
-    top_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
-    top_outer_wall.set_scaling(level1.size.w + 2.0 * outer_wall_w, outer_wall_h, outer_wall_w);
-    top_outer_wall.set_position(0.0, 0.0, -level1_half_h - outer_wall_w / 2.0);
-    scene.add_node(top_outer_wall, None);
+    // let mut top_outer_wall = graphics::Node::object(&display, &cube);
+    // top_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
+    // top_outer_wall.set_scaling(level1.size.w + 2.0 * outer_wall_w, outer_wall_h, outer_wall_w);
+    // top_outer_wall.set_position(0.0, 0.0, -level1_half_h - outer_wall_w / 2.0);
+    // scene.add_node(top_outer_wall, None);
 
-    let mut bottom_outer_wall = graphics::Node::object(&display, &cube);
-    bottom_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
-    bottom_outer_wall.set_scaling(level1.size.w + 2.0 * outer_wall_w, outer_wall_h, outer_wall_w);
-    bottom_outer_wall.set_position(0.0, 0.0, level1_half_h + outer_wall_w / 2.0);
-    scene.add_node(bottom_outer_wall, None);
+    // let mut bottom_outer_wall = graphics::Node::object(&display, &cube);
+    // bottom_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
+    // bottom_outer_wall.set_scaling(level1.size.w + 2.0 * outer_wall_w, outer_wall_h, outer_wall_w);
+    // bottom_outer_wall.set_position(0.0, 0.0, level1_half_h + outer_wall_w / 2.0);
+    // scene.add_node(bottom_outer_wall, None);
 
+    // Parent node for board moving parts
     let board = graphics::Node::transformation();
     let board_id = scene.add_node(board, None);
 
+    // Board surface
     let mut board_surface = graphics::Node::object(&display, &quad);
     let mut board_tex = graphics::Texture::solid_color_sized(
         191, 140, 77,
@@ -102,12 +141,20 @@ fn main() {
     board_surface.set_scaling(level1.size.w, 1.0, level1.size.h);
     scene.add_node(board_surface, Some(board_id));
 
+    // Board edge walls
+    scene.add_node(board_wall(Side::Left, &level1.size, &display, &cube), Some(board_id));
+    scene.add_node(board_wall(Side::Right, &level1.size, &display, &cube), Some(board_id));
+    scene.add_node(board_wall(Side::Top, &level1.size, &display, &cube), Some(board_id));
+    scene.add_node(board_wall(Side::Bottom, &level1.size, &display, &cube), Some(board_id));
+
+    // Ball
     let mut ball = graphics::Node::object(&display, &sphere);
     ball.set_texture(&display, graphics::Texture::solid_color(153, 153, 153));
     ball.set_scaling(game::BALL_R, game::BALL_R, game::BALL_R);
     ball.set_position(level1.start.x - level1_half_w, game::BALL_R, level1.start.y - level1_half_h);
     let ball_id = scene.add_node(ball, Some(board_id));
 
+    // Walls
     for wall in level1.walls.iter() {
         let mut obj = graphics::Node::object(&display, &cube);
         obj.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
