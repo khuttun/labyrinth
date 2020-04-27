@@ -84,7 +84,7 @@ fn main() {
 
     display.gl_window().window().set_cursor_position(
         glutin::dpi::PhysicalPosition::new(w / 2.0, h / 2.0)).unwrap();
-    //display.gl_window().window().set_cursor_visible(false);
+    display.gl_window().window().set_cursor_visible(false);
 
     let quad = Rc::new(graphics::Shape::from_ply(&display, "quad.ply"));
     let cube = Rc::new(graphics::Shape::from_ply(&display, "cube.ply"));
@@ -167,7 +167,8 @@ fn main() {
         scene.add_node(obj, Some(board_id));
     }
 
-    scene.set_light_position(level1_half_w, level1_half_w.max(level1_half_h), level1_half_h);
+    // Set light directly above the board
+    scene.set_light_position(0.0, level1_half_w.max(level1_half_h), 0.0);
 
     // Create a new game from the level and enter the main event loop
     let mut game = game::Game::new(level1);
@@ -218,7 +219,7 @@ fn main() {
             game::State::InProgress => {
                 scene.get_node(ball_id).set_position(game.ball_pos.x - level1_half_w, game::BALL_R, game.ball_pos.y - level1_half_h);
                 scene.look_at(
-                    game.ball_pos.x - level1_half_w, 50.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 20.0 * game::BALL_R,
+                    game.ball_pos.x - level1_half_w, 40.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 30.0 * game::BALL_R,
                     game.ball_pos.x - level1_half_w, 0.0, game.ball_pos.y - level1_half_h);
             },
             _ => (),
