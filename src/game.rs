@@ -110,7 +110,7 @@ pub enum State {
 pub struct Game {
     pub state: State,
     pub ball_pos: Point,
-    ball_v: Velocity,
+    pub ball_v: Velocity,
     prev_update: Option<Instant>,
     angle_x: f32, // Board angle w.r.t. x-axis in radians
     angle_y: f32,

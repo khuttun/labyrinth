@@ -155,6 +155,8 @@ fn main() {
     // Create a new game from the level and enter the main event loop
     let mut game = game::Game::new(level1);
 
+    let mut t_lost: Option<Instant> = None;
+
     event_loop.run(move |event, _, control_flow| {
         // Wake up after a deadline if no other events are received
         *control_flow = glutin::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_nanos(16_666_667));
@@ -195,14 +197,28 @@ fn main() {
             _ => return,
         }
 
-        game.update(Instant::now());
+        let now = Instant::now();
+        game.update(now);
 
         match game.state {
             game::State::InProgress => {
-                scene.get_node(ball_id).set_position(game.ball_pos.x - level1_half_w, game::BALL_R, game.ball_pos.y - level1_half_h);
+                scene.get_node(ball_id).set_position(
+                    game.ball_pos.x - level1_half_w,
+                    game::BALL_R,
+                    game.ball_pos.y - level1_half_h,
+                );
                 scene.look_at(
                     game.ball_pos.x - level1_half_w, 40.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 30.0 * game::BALL_R,
-                    game.ball_pos.x - level1_half_w, 0.0, game.ball_pos.y - level1_half_h);
+                    game.ball_pos.x - level1_half_w, 0.0, game.ball_pos.y - level1_half_h,
+                );
+            },
+            game::State::Lost => {
+                let dt_lost = now.duration_since(*t_lost.get_or_insert(now)).as_secs_f32();
+                scene.get_node(ball_id).set_position(
+                    game.ball_pos.x - level1_half_w + game.ball_v.x * dt_lost,
+                    game::BALL_R - 30.0 * game::BALL_R * dt_lost,
+                    game.ball_pos.y - level1_half_h + game.ball_v.y * dt_lost,
+                );
             },
             _ => (),
         }
