@@ -10,6 +10,8 @@ mod graphics;
 
 const BOARD_TEXTURE_SIZE_FACTOR: f32 = 20.0;
 const HOLE_R_IN_TEXTURE: f32 = BOARD_TEXTURE_SIZE_FACTOR * game::HOLE_R;
+const BOARD_WALL_W: f32 = game::BALL_R;
+const BOARD_WALL_H: f32 = game::WALL_H;
 
 enum Side {
     Left,
@@ -23,26 +25,26 @@ fn board_wall(side: Side, board_size: &game::Size, display: &glium::Display, sha
     node.set_texture(display, graphics::Texture::solid_color(191, 140, 77));
     node.set_scaling(
         match side {
-            Side::Left | Side::Right => game::BALL_R,
-            Side::Top | Side::Bottom => board_size.w + 2.0 * game::BALL_R,
+            Side::Left | Side::Right => BOARD_WALL_W,
+            Side::Top | Side::Bottom => board_size.w + 2.0 * BOARD_WALL_W,
         },
-        game::WALL_H,
+        BOARD_WALL_H,
         match side {
             Side::Left | Side::Right => board_size.h,
-            Side::Top | Side::Bottom => game::BALL_R,
+            Side::Top | Side::Bottom => BOARD_WALL_W,
         },
     );
     node.set_position(
         match side {
-            Side::Left => -board_size.w / 2.0 - game::BALL_R / 2.0,
-            Side::Right => board_size.w / 2.0 + game::BALL_R / 2.0,
+            Side::Left => -board_size.w / 2.0 - BOARD_WALL_W / 2.0,
+            Side::Right => board_size.w / 2.0 + BOARD_WALL_W / 2.0,
             Side::Top | Side::Bottom => 0.0,
         },
-        game::WALL_H / 2.0,
+        BOARD_WALL_H / 2.0,
         match side {
             Side::Left | Side::Right  => 0.0,
-            Side::Top => board_size.h / 2.0 + game::BALL_R / 2.0,
-            Side::Bottom => -board_size.h / 2.0 - game::BALL_R / 2.0,
+            Side::Top => board_size.h / 2.0 + BOARD_WALL_W / 2.0,
+            Side::Bottom => -board_size.h / 2.0 - BOARD_WALL_W / 2.0,
         },
     );
     return node;
@@ -98,32 +100,12 @@ fn main() {
 
     let mut scene = graphics::Scene::new(&display, w / h);
 
-    // let outer_wall_w = game::BALL_R;
-    // let outer_wall_h = 8.0 * game::BALL_R;
-
-    // let mut left_outer_wall = graphics::Node::object(&display, &cube);
-    // left_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
-    // left_outer_wall.set_scaling(outer_wall_w, outer_wall_h, level1.size.h);
-    // left_outer_wall.set_position(-level1_half_w - outer_wall_w / 2.0, 0.0, 0.0);
-    // scene.add_node(left_outer_wall, None);
-
-    // let mut right_outer_wall = graphics::Node::object(&display, &cube);
-    // right_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
-    // right_outer_wall.set_scaling(outer_wall_w, outer_wall_h, level1.size.h);
-    // right_outer_wall.set_position(level1_half_w + outer_wall_w / 2.0, 0.0, 0.0);
-    // scene.add_node(right_outer_wall, None);
-
-    // let mut top_outer_wall = graphics::Node::object(&display, &cube);
-    // top_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
-    // top_outer_wall.set_scaling(level1.size.w + 2.0 * outer_wall_w, outer_wall_h, outer_wall_w);
-    // top_outer_wall.set_position(0.0, 0.0, -level1_half_h - outer_wall_w / 2.0);
-    // scene.add_node(top_outer_wall, None);
-
-    // let mut bottom_outer_wall = graphics::Node::object(&display, &cube);
-    // bottom_outer_wall.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
-    // bottom_outer_wall.set_scaling(level1.size.w + 2.0 * outer_wall_w, outer_wall_h, outer_wall_w);
-    // bottom_outer_wall.set_position(0.0, 0.0, level1_half_h + outer_wall_w / 2.0);
-    // scene.add_node(bottom_outer_wall, None);
+    // Board outer walls
+    let outer_wall_area = game::Size { w: level1.size.w + 3.0 * BOARD_WALL_W, h: level1.size.h + 3.0 * BOARD_WALL_W };
+    scene.add_node(board_wall(Side::Left, &outer_wall_area, &display, &cube), None);
+    scene.add_node(board_wall(Side::Right, &outer_wall_area, &display, &cube), None);
+    scene.add_node(board_wall(Side::Top, &outer_wall_area, &display, &cube), None);
+    scene.add_node(board_wall(Side::Bottom, &outer_wall_area, &display, &cube), None);
 
     // Parent node for board moving parts
     let board = graphics::Node::transformation();
