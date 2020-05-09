@@ -155,8 +155,6 @@ fn main() {
     // Create a new game from the level and enter the main event loop
     let mut game = game::Game::new(level1);
 
-    let mut t_lost: Option<Instant> = None;
-
     event_loop.run(move |event, _, control_flow| {
         // Wake up after a deadline if no other events are received
         *control_flow = glutin::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_nanos(16_666_667));
@@ -212,13 +210,11 @@ fn main() {
                     game.ball_pos.x - level1_half_w, 0.0, game.ball_pos.y - level1_half_h,
                 );
             },
-            game::State::Lost => {
-                let dt_lost = now.duration_since(*t_lost.get_or_insert(now)).as_secs_f32();
-                scene.get_node(ball_id).set_position(
-                    game.ball_pos.x - level1_half_w + game.ball_v.x * dt_lost,
-                    game::BALL_R - 30.0 * game::BALL_R * dt_lost,
-                    game.ball_pos.y - level1_half_h + game.ball_v.y * dt_lost,
-                );
+            game::State::Lost { hole, t_lost } => {
+                match animate_ball_falling_in_hole(now.duration_since(t_lost).as_secs_f32(), game.ball_pos, hole) {
+                    Some((x, y, z)) => scene.get_node(ball_id).set_position(x - level1_half_w, z, y - level1_half_h),
+                    None => scene.get_node(ball_id).set_scaling(0.0, 0.0, 0.0),
+                }
             },
             _ => (),
         }
@@ -227,4 +223,44 @@ fn main() {
         scene.draw(&mut target);
         target.finish().unwrap();
     });
+}
+
+use nalgebra_glm as glm;
+
+// Calculates the ball position (x, y, z) when the game has been lost and the ball is falling in to hole.
+// x and y are in game coordinates, z is the vertical distance from the game's board surface.
+// The animation has finite duration and `None` is returned when the animation has finished.
+// `t` is the duration since (in s), and `last_ball_pos` is the ball position when the game was lost.
+// `hole_pos` is the center of the hole where te ball is falling.
+fn animate_ball_falling_in_hole(t: f32, last_ball_pos: game::Point, hole_pos: game::Point) -> Option<(f32, f32, f32)> {
+    const ROLL_OVER_MAX_DURATION: f32 = 1.0;
+    const FREE_FALL_DURATION: f32 = 1.0;
+    const FREE_FALL_DEPTH: f32 = 2.0 * game::BALL_R;
+
+    let hole = glm::vec2(hole_pos.x, hole_pos.y);
+    let ball0 = glm::vec2(last_ball_pos.x, last_ball_pos.y);
+    let free_fall_point = hole + glm::normalize(&(ball0 - hole)) * (game::HOLE_R - game::BALL_R);
+
+    // TODO: use glm
+    let initial_roll_over = game::HOLE_R - hole_pos.distance_to(&last_ball_pos);
+    let roll_over_duration = game::clamp((game::BALL_R - initial_roll_over) / game::BALL_R, 0.0, 1.0) * ROLL_OVER_MAX_DURATION;
+    let total_duration = roll_over_duration + FREE_FALL_DURATION;
+
+    match t {
+        t if t < roll_over_duration => {
+            let xy = ball0 + (free_fall_point - ball0) * (t / roll_over_duration);
+            let ds_hole_edge = game::HOLE_R - glm::distance(&hole, &xy);
+            Some((
+                xy.x,
+                xy.y,
+                (game::BALL_R.powi(2) - ds_hole_edge.powi(2)).sqrt(),
+            ))
+        },
+        t if t < total_duration => Some((
+            free_fall_point.x,
+            free_fall_point.y,
+            -(t - roll_over_duration) / FREE_FALL_DURATION * FREE_FALL_DEPTH,
+        )),
+        _ => None,
+    }
 }

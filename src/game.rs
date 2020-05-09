@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 use std::time::Instant;
 
 pub const BALL_R: f32 = 1.0;
-pub const HOLE_R: f32 = 1.25 * BALL_R;
+pub const HOLE_R: f32 = 1.35 * BALL_R;
 pub const WALL_H: f32 = 1.5;
 const ACCEL_COEFF: f32 = 400.0 / std::f32::consts::PI;
 const BOUNCE_COEFF: f32 = 0.2;
@@ -23,11 +23,11 @@ impl From<&json::JsonValue> for Point {
 }
 
 impl Point {
-    fn distance_to(&self, other: &Point) -> f32 {
+    pub fn distance_to(&self, other: &Point) -> f32 {
         ((other.x - self.x).powi(2) + (other.y - self.y).powi(2)).sqrt()
     }
 
-    fn angle_to(&self, other: &Point) -> f32 {
+    pub fn angle_to(&self, other: &Point) -> f32 {
         (other.y - self.y).atan2(other.x - self.x)
     }
 }
@@ -104,7 +104,10 @@ pub struct Velocity {
 pub enum State {
     InProgress,
     Won,
-    Lost,
+    Lost {
+        hole: Point,
+        t_lost: Instant,
+    },
 }
 
 pub struct Game {
@@ -150,8 +153,9 @@ impl Game {
             self.state = State::Won;
         }
 
-        if self.level.holes.iter().find(|h| p.distance_to(h) < HOLE_R).is_some() {
-            self.state = State::Lost;
+        let hole = self.level.holes.iter().find(|h| p.distance_to(h) < HOLE_R);
+        if hole.is_some() {
+            self.state = State::Lost { hole: *hole.unwrap(), t_lost: time };
         }
 
         self.prev_update = Some(time);
@@ -247,7 +251,7 @@ fn bounce_y(pos: &mut Point, vel: &mut Velocity, edge_y: f32) {
     vel.y = -BOUNCE_COEFF * vel.y;
 }
 
-fn clamp(x: f32, min: f32, max: f32) -> f32 {
+pub fn clamp(x: f32, min: f32, max: f32) -> f32 {
     match x {
         x if x < min => min,
         x if x > max => max,
