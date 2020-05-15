@@ -1,6 +1,4 @@
 - Winning & losing
-    - Animate ball falling to hole
-        - Make ball fall cleanly so that it doesn't pass through board surface partly
     - Restart current/start next level?
     - Texts?
 - Classic BRIO level

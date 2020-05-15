@@ -111,6 +111,13 @@ fn main() {
     let board = graphics::Node::transformation();
     let board_id = scene.add_node(board, None);
 
+    // Ball (has to be added to the scene before the board surface to draw ball falling in to hole correctly)
+    let mut ball = graphics::Node::object(&display, &sphere);
+    ball.set_texture(&display, graphics::Texture::solid_color(153, 153, 153));
+    ball.set_scaling(game::BALL_R, game::BALL_R, game::BALL_R);
+    ball.set_position(level1.start.x - level1_half_w, game::BALL_R, level1.start.y - level1_half_h);
+    let ball_id = scene.add_node(ball, Some(board_id));
+
     // Board surface
     let mut board_surface = graphics::Node::object(&display, &quad);
     let mut board_tex = graphics::Texture::solid_color_sized(
@@ -128,13 +135,6 @@ fn main() {
     scene.add_node(board_wall(Side::Right, &level1.size, &display, &cube), Some(board_id));
     scene.add_node(board_wall(Side::Top, &level1.size, &display, &cube), Some(board_id));
     scene.add_node(board_wall(Side::Bottom, &level1.size, &display, &cube), Some(board_id));
-
-    // Ball
-    let mut ball = graphics::Node::object(&display, &sphere);
-    ball.set_texture(&display, graphics::Texture::solid_color(153, 153, 153));
-    ball.set_scaling(game::BALL_R, game::BALL_R, game::BALL_R);
-    ball.set_position(level1.start.x - level1_half_w, game::BALL_R, level1.start.y - level1_half_h);
-    let ball_id = scene.add_node(ball, Some(board_id));
 
     // Walls
     for wall in level1.walls.iter() {
@@ -231,24 +231,22 @@ use nalgebra_glm as glm;
 // x and y are in game coordinates, z is the vertical distance from the game's board surface.
 // The animation has finite duration and `None` is returned when the animation has finished.
 // `t` is the duration since (in s), and `last_ball_pos` is the ball position when the game was lost.
-// `hole_pos` is the center of the hole where te ball is falling.
+// `hole_pos` is the center of the hole where the ball is falling.
 fn animate_ball_falling_in_hole(t: f32, last_ball_pos: game::Point, hole_pos: game::Point) -> Option<(f32, f32, f32)> {
-    const ROLL_OVER_MAX_DURATION: f32 = 1.0;
-    const FREE_FALL_DURATION: f32 = 1.0;
-    const FREE_FALL_DEPTH: f32 = 2.0 * game::BALL_R;
+    const ROLL_OVER_DURATION: f32 = 0.1;
+    const FREE_FALL_DURATION: f32 = 0.1;
+    const TOTAL_DURATION: f32 = ROLL_OVER_DURATION + FREE_FALL_DURATION;
+    const FREE_FALL_DEPTH: f32 = 3.0 * game::BALL_R;
 
     let hole = glm::vec2(hole_pos.x, hole_pos.y);
     let ball0 = glm::vec2(last_ball_pos.x, last_ball_pos.y);
+
+    // xy-point where the ball has completely rolled over the hole edge
     let free_fall_point = hole + glm::normalize(&(ball0 - hole)) * (game::HOLE_R - game::BALL_R);
 
-    // TODO: use glm
-    let initial_roll_over = game::HOLE_R - hole_pos.distance_to(&last_ball_pos);
-    let roll_over_duration = game::clamp((game::BALL_R - initial_roll_over) / game::BALL_R, 0.0, 1.0) * ROLL_OVER_MAX_DURATION;
-    let total_duration = roll_over_duration + FREE_FALL_DURATION;
-
     match t {
-        t if t < roll_over_duration => {
-            let xy = ball0 + (free_fall_point - ball0) * (t / roll_over_duration);
+        t if t < ROLL_OVER_DURATION => {
+            let xy = ball0 + (free_fall_point - ball0) * (t / ROLL_OVER_DURATION);
             let ds_hole_edge = game::HOLE_R - glm::distance(&hole, &xy);
             Some((
                 xy.x,
@@ -256,10 +254,10 @@ fn animate_ball_falling_in_hole(t: f32, last_ball_pos: game::Point, hole_pos: ga
                 (game::BALL_R.powi(2) - ds_hole_edge.powi(2)).sqrt(),
             ))
         },
-        t if t < total_duration => Some((
+        t if t < TOTAL_DURATION => Some((
             free_fall_point.x,
             free_fall_point.y,
-            -(t - roll_over_duration) / FREE_FALL_DURATION * FREE_FALL_DEPTH,
+            -(t - ROLL_OVER_DURATION) / FREE_FALL_DURATION * FREE_FALL_DEPTH,
         )),
         _ => None,
     }
