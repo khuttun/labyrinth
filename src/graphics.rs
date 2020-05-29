@@ -235,7 +235,7 @@ impl Scene {
         Scene {
             nodes: Vec::new(),
             view_matrix: glm::look_at(&glm::vec3(0.0, 5.0, 5.0), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0)),
-            perspective_matrix: glm::perspective(aspect, glm::radians(&glm::vec1(45.0)).x, 0.1, 100.0),
+            perspective_matrix: glm::perspective(aspect, glm::radians(&glm::vec1(45.0)).x, 2.0, 2000.0),
             light_position: glm::vec4(0.0, 5.0, 0.0, 1.0),
             default_shaders: glium::program::Program::new(
                 facade,

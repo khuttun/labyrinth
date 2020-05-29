@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 mod game;
 mod graphics;
 
-const BOARD_TEXTURE_SIZE_FACTOR: f32 = 20.0;
+const BOARD_TEXTURE_SIZE_FACTOR: f32 = 1.0; // TODO: remove, and assume levels are large enough?
 const HOLE_R_IN_TEXTURE: f32 = BOARD_TEXTURE_SIZE_FACTOR * game::HOLE_R;
 const BOARD_WALL_W: f32 = game::BALL_R;
 const BOARD_WALL_H: f32 = game::WALL_H;
@@ -166,8 +166,8 @@ fn main() {
                     return;
                 },
                 WindowEvent::CursorMoved { position, .. } => {
-                    let angle_x = (position.x as f32 - w / 2.0) / (w / 2.0) * (PI / 32.0);
-                    let angle_y = (position.y as f32 - h / 2.0) / (h / 2.0) * (PI / 32.0);
+                    let angle_x = (position.x as f32 - w / 2.0) / (w / 2.0) * (PI / 64.0);
+                    let angle_y = (position.y as f32 - h / 2.0) / (h / 2.0) * (PI / 64.0);
                     //println!("Cursor position ({}, {}) -> Board angle ({}°, {}°)", position.x, position.y, angle_x * 180.0 / PI, angle_y * 180.0 / PI);
                     game.set_x_angle(angle_x);
                     game.set_y_angle(angle_y);
@@ -206,7 +206,7 @@ fn main() {
                     game.ball_pos.y - level1_half_h,
                 );
                 scene.look_at(
-                    game.ball_pos.x - level1_half_w, 40.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 30.0 * game::BALL_R,
+                    game.ball_pos.x - level1_half_w, 40.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 20.0 * game::BALL_R,
                     game.ball_pos.x - level1_half_w, 0.0, game.ball_pos.y - level1_half_h,
                 );
             },

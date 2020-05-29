@@ -1,5 +1,8 @@
+- Classic BRIO level
+- Improve corner bounces
 - Winning & losing
     - Restart current/start next level?
     - Texts?
-- Classic BRIO level
+- Draw the line from start to end
+- Better graphics
 - Fixed timestep physics?
