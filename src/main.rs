@@ -165,6 +165,7 @@ fn main() {
                     *control_flow = glutin::event_loop::ControlFlow::Exit;
                     return;
                 },
+                // TODO: use DeviceEvent instead (and grab the cursor?)
                 WindowEvent::CursorMoved { position, .. } => {
                     let angle_x = (position.x as f32 - w / 2.0) / (w / 2.0) * (PI / 64.0);
                     let angle_y = (position.y as f32 - h / 2.0) / (h / 2.0) * (PI / 64.0);
@@ -206,7 +207,7 @@ fn main() {
                     game.ball_pos.y - level1_half_h,
                 );
                 scene.look_at(
-                    game.ball_pos.x - level1_half_w, 40.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 20.0 * game::BALL_R,
+                    game.ball_pos.x - level1_half_w, 80.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 40.0 * game::BALL_R,
                     game.ball_pos.x - level1_half_w, 0.0, game.ball_pos.y - level1_half_h,
                 );
             },

@@ -82,6 +82,7 @@ pub struct Level {
 
 impl Level {
     pub fn from_json(file_name: &str) -> Level {
+        // TODO: check that no walls/holes/board edges collide
         let data = json::parse(&std::fs::read_to_string(file_name).unwrap()).unwrap();
         Level {
             name: String::from(data["name"].as_str().unwrap()),

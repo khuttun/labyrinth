@@ -1,4 +1,5 @@
 - Classic BRIO level
+    - Make sure holes at the edge cannot be passed from between hole and the board edge
 - Improve corner bounces
 - Winning & losing
     - Restart current/start next level?
