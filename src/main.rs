@@ -8,10 +8,10 @@ use std::time::{Duration, Instant};
 mod game;
 mod graphics;
 
-const BOARD_TEXTURE_SIZE_FACTOR: f32 = 1.0; // TODO: remove, and assume levels are large enough?
-const HOLE_R_IN_TEXTURE: f32 = BOARD_TEXTURE_SIZE_FACTOR * game::HOLE_R;
-const BOARD_WALL_W: f32 = game::BALL_R;
-const BOARD_WALL_H: f32 = game::WALL_H;
+// TODO: Move utility functions out from main
+
+const BOARD_WALL_W: f32 = game::BALL_R; // width of board edge walls
+const WALL_H: f32 = game::BALL_R; // height of all walls
 
 enum Side {
     Left,
@@ -28,7 +28,7 @@ fn board_wall(side: Side, board_size: &game::Size, display: &glium::Display, sha
             Side::Left | Side::Right => BOARD_WALL_W,
             Side::Top | Side::Bottom => board_size.w + 2.0 * BOARD_WALL_W,
         },
-        BOARD_WALL_H,
+        WALL_H,
         match side {
             Side::Left | Side::Right => board_size.h,
             Side::Top | Side::Bottom => BOARD_WALL_W,
@@ -40,7 +40,7 @@ fn board_wall(side: Side, board_size: &game::Size, display: &glium::Display, sha
             Side::Right => board_size.w / 2.0 + BOARD_WALL_W / 2.0,
             Side::Top | Side::Bottom => 0.0,
         },
-        BOARD_WALL_H / 2.0,
+        WALL_H / 2.0,
         match side {
             Side::Left | Side::Right  => 0.0,
             Side::Top => board_size.h / 2.0 + BOARD_WALL_W / 2.0,
@@ -52,15 +52,15 @@ fn board_wall(side: Side, board_size: &game::Size, display: &glium::Display, sha
 
 pub fn punch_holes(tex: &mut graphics::Texture, holes: &Vec<game::Point>) {
     for hole in holes.iter() {
-        let u_mid = BOARD_TEXTURE_SIZE_FACTOR * hole.x;
-        let v_mid = tex.h as f32 - BOARD_TEXTURE_SIZE_FACTOR * hole.y; // board and texture coordinates have opposite y-direction
-        let u_min = (u_mid - HOLE_R_IN_TEXTURE) as usize;
-        let u_max = (u_mid + HOLE_R_IN_TEXTURE) as usize;
-        let v_min = (v_mid - HOLE_R_IN_TEXTURE) as usize;
-        let v_max = (v_mid + HOLE_R_IN_TEXTURE) as usize;
+        let u_mid = hole.x;
+        let v_mid = tex.h as f32 - hole.y; // board and texture coordinates have opposite y-direction
+        let u_min = (u_mid - game::HOLE_R) as usize;
+        let u_max = (u_mid + game::HOLE_R) as usize;
+        let v_min = (v_mid - game::HOLE_R) as usize;
+        let v_max = (v_mid + game::HOLE_R) as usize;
         for u in u_min .. u_max + 1 {
             for v in v_min .. v_max + 1 {
-                if (u_mid - u as f32).powi(2) + (v_mid - v as f32).powi(2) < HOLE_R_IN_TEXTURE.powi(2) {
+                if (u_mid - u as f32).powi(2) + (v_mid - v as f32).powi(2) < game::HOLE_R.powi(2) {
                     *tex.texel(u, v).a() = 0;
                 }
             }
@@ -122,8 +122,8 @@ fn main() {
     let mut board_surface = graphics::Node::object(&display, &quad);
     let mut board_tex = graphics::Texture::solid_color_sized(
         191, 140, 77,
-        (BOARD_TEXTURE_SIZE_FACTOR * level1.size.w) as u32,
-        (BOARD_TEXTURE_SIZE_FACTOR * level1.size.h) as u32
+        level1.size.w as u32,
+        level1.size.h as u32
     );
     punch_holes(&mut board_tex, &level1.holes);
     board_surface.set_texture(&display, board_tex);
@@ -140,10 +140,10 @@ fn main() {
     for wall in level1.walls.iter() {
         let mut obj = graphics::Node::object(&display, &cube);
         obj.set_texture(&display, graphics::Texture::solid_color(26, 26, 26));
-        obj.set_scaling(wall.size.w, game::WALL_H, wall.size.h);
+        obj.set_scaling(wall.size.w, WALL_H, wall.size.h);
         obj.set_position(
             wall.pos.x - level1_half_w + wall.size.w / 2.0,
-            game::WALL_H / 2.0,
+            WALL_H / 2.0,
             wall.pos.y - level1_half_h + wall.size.h / 2.0,
         );
         scene.add_node(obj, Some(board_id));
@@ -167,6 +167,7 @@ fn main() {
                 },
                 // TODO: use DeviceEvent instead (and grab the cursor?)
                 WindowEvent::CursorMoved { position, .. } => {
+                    // TODO: add constant for rotation factor
                     let angle_x = (position.x as f32 - w / 2.0) / (w / 2.0) * (PI / 64.0);
                     let angle_y = (position.y as f32 - h / 2.0) / (h / 2.0) * (PI / 64.0);
                     //println!("Cursor position ({}, {}) -> Board angle ({}°, {}°)", position.x, position.y, angle_x * 180.0 / PI, angle_y * 180.0 / PI);
@@ -207,7 +208,7 @@ fn main() {
                     game.ball_pos.y - level1_half_h,
                 );
                 scene.look_at(
-                    game.ball_pos.x - level1_half_w, 80.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 40.0 * game::BALL_R,
+                    game.ball_pos.x - level1_half_w, 40.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 10.0 * game::BALL_R,
                     game.ball_pos.x - level1_half_w, 0.0, game.ball_pos.y - level1_half_h,
                 );
             },

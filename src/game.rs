@@ -3,7 +3,6 @@ use std::time::Instant;
 
 pub const BALL_R: f32 = 20.0;
 pub const HOLE_R: f32 = 1.2 * BALL_R;
-pub const WALL_H: f32 = BALL_R; // TODO: move to main?
 const ACCEL_COEFF: f32 = 300.0 * BALL_R / std::f32::consts::PI;
 const BOUNCE_COEFF: f32 = 0.2;
 
