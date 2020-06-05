@@ -3,6 +3,7 @@ use std::time::Instant;
 
 pub const BALL_R: f32 = 20.0;
 pub const HOLE_R: f32 = 1.2 * BALL_R;
+pub const MAX_ANGLE: f32 = PI / 32.0;
 const ACCEL_COEFF: f32 = 300.0 * BALL_R / std::f32::consts::PI;
 const BOUNCE_COEFF: f32 = 0.2;
 
@@ -114,9 +115,9 @@ pub struct Game {
     pub state: State,
     pub ball_pos: Point,
     pub ball_v: Velocity,
+    pub angle_x: f32, // Board angle w.r.t. x-axis in radians
+    pub angle_y: f32,
     prev_update: Option<Instant>,
-    angle_x: f32, // Board angle w.r.t. x-axis in radians
-    angle_y: f32,
     level: Level,
 }
 
@@ -126,19 +127,19 @@ impl Game {
             state: State::InProgress,
             ball_pos: lvl.start,
             ball_v: Velocity { x: 0.0, y: 0.0},
-            prev_update: None,
             angle_x: 0.0,
             angle_y: 0.0,
+            prev_update: None,
             level: lvl,
         }
     }
 
-    pub fn set_x_angle(&mut self, angle: f32) {
-        self.angle_x = angle;
+    pub fn rotate_x(&mut self, angle: f32) {
+        self.angle_x = clamp(self.angle_x + angle, -MAX_ANGLE, MAX_ANGLE);
     }
 
-    pub fn set_y_angle(&mut self, angle: f32) {
-        self.angle_y = angle;
+    pub fn rotate_y(&mut self, angle: f32) {
+        self.angle_y = clamp(self.angle_y + angle, -MAX_ANGLE, MAX_ANGLE);
     }
 
     pub fn update(&mut self, time: Instant) {

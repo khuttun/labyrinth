@@ -1,8 +1,7 @@
 #[macro_use]
 extern crate glium;
 use glium::glutin;
-use glutin::event::{Event, StartCause, WindowEvent};
-use std::f32::consts::PI;
+use glutin::event::{DeviceEvent, Event, StartCause, WindowEvent};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 mod game;
@@ -87,6 +86,7 @@ fn main() {
     display.gl_window().window().set_cursor_position(
         glutin::dpi::PhysicalPosition::new(w / 2.0, h / 2.0)).unwrap();
     display.gl_window().window().set_cursor_visible(false);
+    display.gl_window().window().set_cursor_grab(true).unwrap();
 
     let quad = Rc::new(graphics::Shape::from_ply(&display, "quad.ply"));
     let cube = Rc::new(graphics::Shape::from_ply(&display, "cube.ply"));
@@ -160,21 +160,20 @@ fn main() {
         *control_flow = glutin::event_loop::ControlFlow::WaitUntil(Instant::now() + Duration::from_nanos(16_666_667));
 
         match event {
+            Event::DeviceEvent { event, .. } => match event {
+                DeviceEvent::MouseMotion { delta } => {
+                    const ROTATE_COEFF: f32 = 0.0002;
+                    game.rotate_x(ROTATE_COEFF * delta.0 as f32);
+                    game.rotate_y(ROTATE_COEFF * delta.1 as f32);
+                    scene.get_node(board_id).set_rotation(game.angle_y, 0.0, -game.angle_x);
+                    // -> proceed to update game state and draw
+                },
+                _ => return,
+            },
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => {
                     *control_flow = glutin::event_loop::ControlFlow::Exit;
                     return;
-                },
-                // TODO: use DeviceEvent instead (and grab the cursor?)
-                WindowEvent::CursorMoved { position, .. } => {
-                    // TODO: add constant for rotation factor
-                    let angle_x = (position.x as f32 - w / 2.0) / (w / 2.0) * (PI / 64.0);
-                    let angle_y = (position.y as f32 - h / 2.0) / (h / 2.0) * (PI / 64.0);
-                    //println!("Cursor position ({}, {}) -> Board angle ({}°, {}°)", position.x, position.y, angle_x * 180.0 / PI, angle_y * 180.0 / PI);
-                    game.set_x_angle(angle_x);
-                    game.set_y_angle(angle_y);
-                    scene.get_node(board_id).set_rotation(angle_y, 0.0, -angle_x);
-                    // -> proceed to update game state and draw
                 },
                 WindowEvent::KeyboardInput {
                     input: glutin::event::KeyboardInput {
