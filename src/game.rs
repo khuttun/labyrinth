@@ -1,3 +1,4 @@
+use nalgebra_glm as glm;
 use std::f32::consts::PI;
 use std::time::Instant;
 
@@ -197,10 +198,16 @@ impl Game {
         // Wall collisions
         for wall in self.level.walls.iter() {
             match detect_wall_collision(&p, wall) {
-                Some(WallEdge::Left) => bounce_x(&mut p, &mut v, wall.pos.x - BALL_R),
-                Some(WallEdge::Right) => bounce_x(&mut p, &mut v, wall.pos.x + wall.size.w + BALL_R),
-                Some(WallEdge::Top) => bounce_y(&mut p, &mut v, wall.pos.y - BALL_R),
-                Some(WallEdge::Bottom) => bounce_y(&mut p, &mut v, wall.pos.y + wall.size.h + BALL_R),
+                Some(response) => {
+                    p.x = p.x + response.0.x * response.1;
+                    p.y = p.y + response.0.y * response.1;
+                    
+                    // "Damped reflection" around the collision response direction
+                    let v0 = glm::vec2(v.x, v.y);
+                    let v1 = v0 - (1.0 + BOUNCE_COEFF) * glm::dot(&v0, &response.0) * response.0;
+                    v.x = v1.x;
+                    v.y = v1.y;
+                },
                 None => (),
             }
         }
@@ -209,36 +216,24 @@ impl Game {
     }
 }
 
-enum WallEdge {
-    Left,
-    Right,
-    Top,
-    Bottom,
-}
-
-fn detect_wall_collision(ball_pos: &Point, wall: &Rect) -> Option<WallEdge> {
+// Return the collision response (direction, amount) if ball collides with the wall
+fn detect_wall_collision(ball_pos: &Point, wall: &Rect) -> Option<(glm::Vec2, f32)> {
     let wall_half_size = Size { w: wall.size.w / 2.0, h: wall.size.h / 2.0 };
     let wall_center = Point { x: wall.pos.x + wall_half_size.w, y: wall.pos.y + wall_half_size.h };
     let closest_point_in_wall = Point {
         x: wall_center.x + clamp(ball_pos.x - wall_center.x, -wall_half_size.w, wall_half_size.w),
         y: wall_center.y + clamp(ball_pos.y - wall_center.y, -wall_half_size.h, wall_half_size.h),
     };
+    let distance_to_wall = ball_pos.distance_to(&closest_point_in_wall);
 
-    if ball_pos.distance_to(&closest_point_in_wall) < BALL_R {
-        Some(angle_to_wall_edge(closest_point_in_wall.angle_to(ball_pos)))
+    if distance_to_wall < BALL_R {
+        Some((
+            glm::normalize(&(glm::vec2(ball_pos.x, ball_pos.y) - glm::vec2(closest_point_in_wall.x, closest_point_in_wall.y))),
+            BALL_R - distance_to_wall
+        ))
     }
     else {
         None
-    }
-}
-
-fn angle_to_wall_edge(a: f32) -> WallEdge {
-    match a {
-        a if a < -3.0 * PI / 4.0 => WallEdge::Left,
-        a if a < -PI / 4.0 => WallEdge::Top,
-        a if a < PI / 4.0 => WallEdge:: Right,
-        a if a < 3.0 * PI / 4.0 => WallEdge::Bottom,
-        _ => WallEdge::Left,
     }
 }
 
