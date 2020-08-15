@@ -179,6 +179,19 @@ impl Node {
         }
     }
 
+    // TODO: this should be in Texture, but first Texture needs to be converted to store glium texture
+    pub fn draw_line_strip_to_texture<F>(&self, facade: &F, uv_points: &[(usize, usize)])
+        where F: glium::backend::Facade
+    {
+        match &self.kind {
+            NodeKind::Object { shape: _, texture } => {
+                let fb = glium::framebuffer::SimpleFrameBuffer::new(facade, texture);
+                //fb.draw();
+            },
+            NodeKind::Transformation => panic!("Can't draw to texture for transformation node"),
+        }
+    }
+
     fn update_model_matrix(&mut self) {
         self.model_matrix =
             glm::translation(&self.translation) *
