@@ -1,4 +1,3 @@
-- Check game GLM refactoring performance impact (with release build)
 - Winning & losing
     - Restart current/start next level?
     - Texts?
