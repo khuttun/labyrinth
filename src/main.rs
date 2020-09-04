@@ -127,8 +127,7 @@ fn main() {
     );
     punch_holes(&mut board_tex, &level1.holes);
     board_surface.set_texture(&display, board_tex);
-    let gline: Vec<(usize, usize)> = level1.guiding_line.iter().map(|p| (p.x as usize, (level1.size.h - p.y) as usize)).collect();
-    board_surface.draw_line_strip_to_texture(&display, &gline);
+    board_surface.draw_line_strip_to_texture(&display, &[]);
     board_surface.set_scaling(level1.size.w, 1.0, level1.size.h);
     scene.add_node(board_surface, Some(board_id));
 

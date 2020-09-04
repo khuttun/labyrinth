@@ -99,7 +99,6 @@ pub struct Level {
     pub end: Rect,
     pub walls: Vec<Rect>,
     pub holes: Vec<Point>,
-    pub guiding_line: Vec<Point>,
 }
 
 impl Level {
@@ -113,7 +112,6 @@ impl Level {
             end: Rect::from(&data["end"]),
             walls: data["walls"].members().map(|j| Rect::from(j)).collect(),
             holes: data["holes"].members().map(|j| Point::from(j)).collect(),
-            guiding_line: data["guiding_line"].members().map(|j| Point::from(j)).collect(),
         }
     }
 }

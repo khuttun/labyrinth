@@ -1,4 +1,3 @@
-use glium::Surface;
 use nalgebra_glm as glm;
 use std::rc::Rc;
 
@@ -186,25 +185,8 @@ impl Node {
     {
         match &self.kind {
             NodeKind::Object { shape: _, texture } => {
-                let mut fb = glium::framebuffer::SimpleFrameBuffer::new(facade, texture).unwrap();
-                let program = glium::Program::from_source(facade, include_str!("passthru.vert"), include_str!("solid.frag"), None).unwrap();
-                let half_w = texture.width() as f32 / 2.0;
-                let half_h = texture.height() as f32 / 2.0;
-                let vertices: Vec<Vertex> = uv_points.iter().map(
-                    |uv| Vertex{
-                        position: [(uv.0 as f32 - half_w) / half_w, (uv.1 as f32 - half_h) / half_h, 0.0],
-                        normal: [0.0, 0.0, 0.0],
-                        tex_coords: [0.0, 0.0],
-                    }
-                ).collect();
-                let vbuf = glium::VertexBuffer::new(facade, &vertices).unwrap();
-                fb.draw(
-                    &vbuf,
-                    &glium::index::NoIndices(glium::index::PrimitiveType::LineStrip),
-                    &program,
-                    &glium::uniforms::EmptyUniforms,
-                    &Default::default(),
-                ).unwrap();
+                let fb = glium::framebuffer::SimpleFrameBuffer::new(facade, texture);
+                //fb.draw();
             },
             NodeKind::Transformation => panic!("Can't draw to texture for transformation node"),
         }
