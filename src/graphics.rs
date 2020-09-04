@@ -99,6 +99,13 @@ impl Texture {
         Texture { data: [r, g, b, 255].iter().cloned().cycle().take((4 * w * h) as usize).collect(), w: w, h: h }
     }
 
+    pub fn from_image(image_file: &str) -> Texture {
+        let image = image::open(image_file).unwrap().flipv().into_rgba();
+        let width = image.width();
+        let height = image.height();
+        Texture { data: image.into_raw(), w: width, h: height }
+    }
+
     pub fn texel(&mut self, u: usize, v: usize) -> TexelRef {
         let begin = 4 * u + 4 * v * self.w as usize;
         TexelRef { data: &mut self.data[begin .. begin + 4] }

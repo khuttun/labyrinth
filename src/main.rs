@@ -130,6 +130,14 @@ fn main() {
     board_surface.set_scaling(level1.size.w, 1.0, level1.size.h);
     scene.add_node(board_surface, Some(board_id));
 
+    // Board markings
+    let mut board_markings = graphics::Node::object(&display, &quad);
+    board_markings.set_texture(&display, graphics::Texture::from_image("level1_markings.png"));
+    board_markings.set_scaling(level1.size.w, 1.0, level1.size.h);
+    // lift the marking very slightly above the board surface so that there's no z-fighting and the markings are visible
+    board_markings.set_position(0.0, game::BALL_R / 100.0, 0.0);
+    scene.add_node(board_markings, Some(board_id));
+
     // Board edge walls
     scene.add_node(board_wall(Side::Left, &level1.size, &display, &cube), Some(board_id));
     scene.add_node(board_wall(Side::Right, &level1.size, &display, &cube), Some(board_id));
