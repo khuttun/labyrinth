@@ -2,6 +2,7 @@
 extern crate glium;
 use glium::glutin;
 use glutin::event::{DeviceEvent, Event, StartCause, WindowEvent};
+use std::env;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 mod game;
@@ -73,13 +74,16 @@ fn main() {
     let cb = glutin::ContextBuilder::new().with_depth_buffer(24).with_multisampling(2);
     let display = glium::Display::new(wb, cb, &event_loop).unwrap();
 
-    let w = display.gl_window().window().inner_size().width as f32;
-    let h = display.gl_window().window().inner_size().height as f32;
-
-    // let monitor = display.gl_window().window().available_monitors().next().unwrap();
-    // let w = monitor.size().width as f32;
-    // let h = monitor.size().height as f32;
-    // display.gl_window().window().set_fullscreen(Some(glutin::window::Fullscreen::Borderless(monitor)));
+    let mut w = display.gl_window().window().inner_size().width as f32;
+    let mut h = display.gl_window().window().inner_size().height as f32;
+    
+    let fullscreen = env::args().any(|arg| arg == "-f");
+    if fullscreen {
+        let monitor = display.gl_window().window().available_monitors().next().unwrap();
+        w = monitor.size().width as f32;
+        h = monitor.size().height as f32;
+        display.gl_window().window().set_fullscreen(Some(glutin::window::Fullscreen::Borderless(monitor)));
+    }
 
     println!("Window size {} x {}", w, h);
 
