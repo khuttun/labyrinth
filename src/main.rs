@@ -69,6 +69,9 @@ pub fn punch_holes(tex: &mut graphics::Texture, holes: &Vec<game::Point>) {
 }
 
 fn main() {
+    let fullscreen = env::args().any(|arg| arg == "-f");
+    let static_camera = env::args().any(|arg| arg == "-s");
+
     let event_loop = glutin::event_loop::EventLoop::new();
     let wb = glutin::window::WindowBuilder::new();
     let cb = glutin::ContextBuilder::new().with_depth_buffer(24).with_multisampling(2);
@@ -76,8 +79,7 @@ fn main() {
 
     let mut w = display.gl_window().window().inner_size().width as f32;
     let mut h = display.gl_window().window().inner_size().height as f32;
-    
-    let fullscreen = env::args().any(|arg| arg == "-f");
+
     if fullscreen {
         let monitor = display.gl_window().window().available_monitors().next().unwrap();
         w = monitor.size().width as f32;
@@ -164,6 +166,12 @@ fn main() {
     // Set light directly above the board
     scene.set_light_position(0.0, level1_half_w.max(level1_half_h), 0.0);
 
+    // Set initial camera position
+    scene.look_at(
+        0.0, 1.2 * level1.size.w.max(level1.size.h), 0.1,
+        0.0, 0.0, 0.0
+    );
+
     // Create a new game from the level and enter the main event loop
     let mut game = game::Game::new(level1);
 
@@ -218,10 +226,12 @@ fn main() {
                     game::BALL_R,
                     game.ball_pos.y - level1_half_h,
                 );
-                scene.look_at(
-                    game.ball_pos.x - level1_half_w, 40.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 10.0 * game::BALL_R,
-                    game.ball_pos.x - level1_half_w, 0.0, game.ball_pos.y - level1_half_h,
-                );
+                if !static_camera {
+                    scene.look_at(
+                        game.ball_pos.x - level1_half_w, 40.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 10.0 * game::BALL_R,
+                        game.ball_pos.x - level1_half_w, 0.0, game.ball_pos.y - level1_half_h,
+                    );
+                }
             },
             game::State::Lost { hole, t_lost } => {
                 match animate_ball_falling_in_hole(now.duration_since(t_lost).as_secs_f32(), game.ball_pos, hole) {
