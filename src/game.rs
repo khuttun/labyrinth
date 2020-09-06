@@ -189,15 +189,15 @@ impl Game {
 
     // Detect collisions to walls and update ball (position, velocity) accordingly
     fn detect_collisions(&self, pv: (glm::Vec2, glm::Vec2)) -> (glm::Vec2, glm::Vec2) {
-        let pv = apply_collision_response(pv, detect_board_left_edge_collision(pv.0, self.level.size));
+        let pv = apply_collision_response(pv, detect_board_left_edge_collision(pv.0));
         let pv = apply_collision_response(pv, detect_board_right_edge_collision(pv.0, self.level.size));
-        let pv = apply_collision_response(pv, detect_board_top_edge_collision(pv.0, self.level.size));
+        let pv = apply_collision_response(pv, detect_board_top_edge_collision(pv.0));
         let pv = apply_collision_response(pv, detect_board_bottom_edge_collision(pv.0, self.level.size));
         return self.level.walls.iter().fold(pv, |pv, w| apply_collision_response(pv, detect_wall_collision(pv.0, *w)));
     }
 }
 
-fn detect_board_left_edge_collision(ball_pos: glm::Vec2, board_size: Size) -> Option<glm::Vec2> {
+fn detect_board_left_edge_collision(ball_pos: glm::Vec2) -> Option<glm::Vec2> {
     if ball_pos.x < BALL_R {
         Some(glm::vec2(BALL_R - ball_pos.x, 0.0))
     }
@@ -215,7 +215,7 @@ fn detect_board_right_edge_collision(ball_pos: glm::Vec2, board_size: Size) -> O
     }
 }
 
-fn detect_board_top_edge_collision(ball_pos: glm::Vec2, board_size: Size) -> Option<glm::Vec2> {
+fn detect_board_top_edge_collision(ball_pos: glm::Vec2) -> Option<glm::Vec2> {
     if ball_pos.y < BALL_R {
         Some(glm::vec2(0.0, BALL_R - ball_pos.y))
     }
