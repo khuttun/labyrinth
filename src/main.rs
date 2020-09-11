@@ -50,17 +50,21 @@ fn board_wall(side: Side, board_size: &game::Size, display: &glium::Display, sha
     return node;
 }
 
-pub fn punch_holes(tex: &mut graphics::Texture, holes: &Vec<game::Point>) {
-    for hole in holes.iter() {
-        let u_mid = hole.x;
-        let v_mid = tex.h as f32 - hole.y; // board and texture coordinates have opposite y-direction
-        let u_min = (u_mid - game::HOLE_R) as usize;
-        let u_max = (u_mid + game::HOLE_R) as usize;
-        let v_min = (v_mid - game::HOLE_R) as usize;
-        let v_max = (v_mid + game::HOLE_R) as usize;
+// Draw transparent circles to `tex` based on the hole locations of `level`.
+// The texture and the level can be different size but their w/h ratio should be the same.
+pub fn punch_holes(tex: &mut graphics::Texture, level: &game::Level) {
+    let scale = tex.w as f32 / level.size.w;
+    let hole_r = scale * game::HOLE_R;
+    for hole in level.holes.iter() {
+        let u_mid = scale * hole.x;
+        let v_mid = scale * (level.size.h - hole.y); // board and texture coordinates have opposite y-direction
+        let u_max = (u_mid + hole_r) as usize;
+        let u_min = (u_mid - hole_r) as usize;
+        let v_min = (v_mid - hole_r) as usize;
+        let v_max = (v_mid + hole_r) as usize;
         for u in u_min .. u_max + 1 {
             for v in v_min .. v_max + 1 {
-                if (u_mid - u as f32).powi(2) + (v_mid - v as f32).powi(2) < game::HOLE_R.powi(2) {
+                if (u_mid - u as f32).powi(2) + (v_mid - v as f32).powi(2) < hole_r.powi(2) {
                     *tex.texel(u, v).a() = 0;
                 }
             }
@@ -131,7 +135,7 @@ fn main() {
         level1.size.w as u32,
         level1.size.h as u32
     );
-    punch_holes(&mut board_tex, &level1.holes);
+    punch_holes(&mut board_tex, &level1);
     board_surface.set_texture(&display, board_tex);
     board_surface.set_scaling(level1.size.w, 1.0, level1.size.h);
     scene.add_node(board_surface, Some(board_id));
