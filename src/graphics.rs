@@ -284,21 +284,25 @@ impl Scene {
         where S: glium::Surface
     {
         surface.clear_color_and_depth((0.0, 0.0, 0.0, 1.0), 1.0);
-
-        let light_pos_array: [f32; 3] = self.light_position.xyz().into();
+        let projection_array: [[f32; 4]; 4] = self.perspective_matrix.into();
+        let light_pos_array: [f32; 3] = (self.view_matrix * self.light_position).xyz().into();
         for (id, n) in self.nodes.iter().enumerate() {
             match &n.node.kind {
                 NodeKind::Object { shape, texture } => {
                     let effective_model_matrix = SceneIterator::new(self, id)
                         .fold(glm::identity(), |acc, node| node.model_matrix * acc);
-                    let mvp_array: [[f32; 4]; 4] = (self.perspective_matrix * self.view_matrix * effective_model_matrix).into();
+                    let model_view = self.view_matrix * effective_model_matrix;
+                    let mv_array: [[f32; 4]; 4] = model_view.into();
+                    let nmv_array: [[f32; 3]; 3] = glm::transpose(&glm::inverse(&glm::mat4_to_mat3(&model_view))).into();
                     surface.draw(
                         &shape.vertex_buffer,
                         &shape.index_buffer,
                         &self.default_shaders,
                         &glium::uniform! {
-                            modelViewProjection: mvp_array,
-                            lightPos: light_pos_array,
+                            modelView: mv_array,
+                            normalModelView: nmv_array,
+                            projection: projection_array,
+                            lightPosCamSpace: light_pos_array,
                             tex: texture,
                         },
                         &glium::DrawParameters {
