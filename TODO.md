@@ -1,6 +1,5 @@
+- Material textures and normal maps?
 - Winning & losing
     - Restart current/start next level?
     - Texts?
-- Draw the line from start to end
-- Better graphics
 - Fixed timestep physics?
