@@ -62,11 +62,11 @@ impl Shape {
     }
 }
 
-pub struct TexelRef<'a> {
+pub struct PixelRef<'a> {
     data: &'a mut [u8]
 }
 
-impl<'a> TexelRef<'a> {
+impl<'a> PixelRef<'a> {
     pub fn r(&mut self) -> &mut u8 {
         &mut self.data[0]
     }
@@ -84,47 +84,55 @@ impl<'a> TexelRef<'a> {
     }
 }
 
-pub struct Texture {
+pub struct Image {
     data: Vec<u8>,
     pub w: u32,
     pub h: u32,
 }
 
-impl Texture {
-    pub fn solid_color(r: u8, g: u8, b: u8) -> Texture {
-        Texture { data: vec![r, g, b, 255], w: 1, h: 1 }
+impl Image {
+    pub fn solid_color(r: u8, g: u8, b: u8) -> Image {
+        Image { data: vec![r, g, b, 255], w: 1, h: 1 }
     }
 
-    pub fn solid_color_sized(r: u8, g: u8, b: u8, w: u32, h: u32) -> Texture {
-        Texture { data: [r, g, b, 255].iter().cloned().cycle().take((4 * w * h) as usize).collect(), w: w, h: h }
+    pub fn solid_color_sized(r: u8, g: u8, b: u8, w: u32, h: u32) -> Image {
+        Image { data: [r, g, b, 255].iter().cloned().cycle().take((4 * w * h) as usize).collect(), w: w, h: h }
     }
 
-    pub fn from_image(image_file: &str) -> Texture {
+    pub fn from_file(image_file: &str) -> Image {
         let image = image::open(image_file).unwrap().flipv().into_rgba();
         let width = image.width();
         let height = image.height();
-        Texture { data: image.into_raw(), w: width, h: height }
+        Image { data: image.into_raw(), w: width, h: height }
     }
 
-    pub fn texel(&mut self, u: usize, v: usize) -> TexelRef {
+    pub fn pixel(&mut self, u: usize, v: usize) -> PixelRef {
         let begin = 4 * u + 4 * v * self.w as usize;
-        TexelRef { data: &mut self.data[begin .. begin + 4] }
+        PixelRef { data: &mut self.data[begin .. begin + 4] }
     }
+}
 
-    fn into_glium_texture<F>(self, facade: &F) -> glium::texture::texture2d::Texture2d
+pub struct Texture {
+    data: glium::texture::texture2d::Texture2d,
+}
+
+impl Texture {
+    pub fn from_image<F>(facade: &F, image: Image) -> Texture
         where F: glium::backend::Facade
     {
-        glium::texture::texture2d::Texture2d::new(
-            facade,
-            glium::texture::RawImage2d::from_raw_rgba(self.data, (self.w, self.h)),
-        ).unwrap()
+        Texture {
+            data: glium::texture::texture2d::Texture2d::new(
+                facade,
+                glium::texture::RawImage2d::from_raw_rgba(image.data, (image.w, image.h))
+            ).unwrap()
+        }
     }
 }
 
 enum NodeKind {
     Object {
         shape: Rc<Shape>,
-        texture: glium::texture::texture2d::Texture2d,
+        texture: Rc<Texture>,
     },
     Transformation,
 }
@@ -138,12 +146,11 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn object<F>(facade: &F, s: &Rc<Shape>) -> Node
-        where F: glium::backend::Facade
+    pub fn object(s: &Rc<Shape>, t: &Rc<Texture>) -> Node
     {
         Node::new(NodeKind::Object {
             shape: Rc::clone(s),
-            texture: Texture::solid_color(50, 50, 50).into_glium_texture(facade),
+            texture: Rc::clone(t),
         })
     }
 
@@ -175,15 +182,6 @@ impl Node {
     pub fn set_position(&mut self, x: f32, y: f32, z: f32) {
         self.translation = glm::vec3(x, y, z);
         self.update_model_matrix();
-    }
-
-    pub fn set_texture<F>(&mut self, facade: &F, t: Texture)
-        where F: glium::backend::Facade
-    {
-        match &mut self.kind {
-            NodeKind::Object { shape: _, texture } => *texture = t.into_glium_texture(facade),
-            NodeKind::Transformation => panic!("Can't set texture for transformation node"),
-        }
     }
 
     fn update_model_matrix(&mut self) {
@@ -303,7 +301,7 @@ impl Scene {
                             normalModelView: nmv_array,
                             projection: projection_array,
                             lightPosCamSpace: light_pos_array,
-                            tex: texture,
+                            tex: &texture.data,
                         },
                         &glium::DrawParameters {
                             blend: glium::Blend::alpha_blending(),
