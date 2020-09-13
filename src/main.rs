@@ -113,14 +113,9 @@ fn main() {
     let sphere = Rc::new(graphics::Shape::from_ply(&display, "sphere.ply"));
 
     // Textures
-    let outer_wall_tex = Rc::new(graphics::Texture::from_image(&display, graphics::Image::solid_color(191, 140, 77)));
-    let inner_wall_tex = Rc::new(graphics::Texture::from_image(&display, graphics::Image::solid_color(26, 26, 26)));
-    let ball_tex = Rc::new(graphics::Texture::from_image(&display, graphics::Image::solid_color(153, 153, 153)));
-    let mut board_tex_image = graphics::Image::solid_color_sized(
-        191, 140, 77,
-        level1.size.w as u32,
-        level1.size.h as u32
-    );
+    let wall_tex = Rc::new(graphics::Texture::from_image(&display, graphics::Image::from_file("wall.jpg")));
+    let ball_tex = Rc::new(graphics::Texture::from_image(&display, graphics::Image::from_file("ball.jpg")));
+    let mut board_tex_image = graphics::Image::from_file("board.jpg");
     punch_holes(&mut board_tex_image, &level1);
     let board_tex = Rc::new(graphics::Texture::from_image(&display, board_tex_image));
     let board_markings_tex = Rc::new(graphics::Texture::from_image(&display, graphics::Image::from_file("level1_markings.png")));
@@ -130,10 +125,10 @@ fn main() {
 
     // Board outer walls
     let outer_wall_area = game::Size { w: level1.size.w + 3.0 * BOARD_WALL_W, h: level1.size.h + 3.0 * BOARD_WALL_W };
-    scene.add_node(board_wall(Side::Left, &outer_wall_area, &cube, &outer_wall_tex), None);
-    scene.add_node(board_wall(Side::Right, &outer_wall_area, &cube, &outer_wall_tex), None);
-    scene.add_node(board_wall(Side::Top, &outer_wall_area, &cube, &outer_wall_tex), None);
-    scene.add_node(board_wall(Side::Bottom, &outer_wall_area, &cube, &outer_wall_tex), None);
+    scene.add_node(board_wall(Side::Left, &outer_wall_area, &cube, &wall_tex), None);
+    scene.add_node(board_wall(Side::Right, &outer_wall_area, &cube, &wall_tex), None);
+    scene.add_node(board_wall(Side::Top, &outer_wall_area, &cube, &wall_tex), None);
+    scene.add_node(board_wall(Side::Bottom, &outer_wall_area, &cube, &wall_tex), None);
 
     // Parent node for board moving parts
     let board = graphics::Node::transformation();
@@ -158,14 +153,14 @@ fn main() {
     scene.add_node(board_markings, Some(board_id));
 
     // Board edge walls
-    scene.add_node(board_wall(Side::Left, &level1.size, &cube, &outer_wall_tex), Some(board_id));
-    scene.add_node(board_wall(Side::Right, &level1.size, &cube, &outer_wall_tex), Some(board_id));
-    scene.add_node(board_wall(Side::Top, &level1.size, &cube, &outer_wall_tex), Some(board_id));
-    scene.add_node(board_wall(Side::Bottom, &level1.size, &cube, &outer_wall_tex), Some(board_id));
+    scene.add_node(board_wall(Side::Left, &level1.size, &cube, &wall_tex), Some(board_id));
+    scene.add_node(board_wall(Side::Right, &level1.size, &cube, &wall_tex), Some(board_id));
+    scene.add_node(board_wall(Side::Top, &level1.size, &cube, &wall_tex), Some(board_id));
+    scene.add_node(board_wall(Side::Bottom, &level1.size, &cube, &wall_tex), Some(board_id));
 
     // Walls
     for wall in level1.walls.iter() {
-        let mut obj = graphics::Node::object(&cube, &inner_wall_tex);
+        let mut obj = graphics::Node::object(&cube, &wall_tex);
         obj.set_scaling(wall.size.w, WALL_H, wall.size.h);
         obj.set_position(
             wall.pos.x - level1_half_w + wall.size.w / 2.0,
