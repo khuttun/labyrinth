@@ -9,11 +9,6 @@ in vec2 fragTexCoords;
 
 out vec4 outputColor;
 
-vec3 gammaCorrect(vec3 color)
-{
-    return pow(color, vec3(1.0/2.2));
-}
-
 void main()
 {
     vec3 normal = normalize(fragNormalCamSpace);
@@ -25,5 +20,5 @@ void main()
     vec3 diffuse = diffuseCoeff * materialColor.rgb;
     vec3 color = ambient + diffuse;
 
-    outputColor = vec4(gammaCorrect(color), materialColor.a);
+    outputColor = vec4(color, materialColor.a);
 }
