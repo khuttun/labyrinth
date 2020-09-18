@@ -140,9 +140,9 @@ enum NodeKind {
 pub struct Node {
     kind: NodeKind,
     scaling: glm::Vec3,
-    rotation: (f32, glm::Vec3),
+    rotation: glm::Mat4x4,
     translation: glm::Vec3,
-    model_matrix: glm::Mat4x4,
+    pub model_matrix: glm::Mat4x4,
 }
 
 impl Node {
@@ -162,7 +162,7 @@ impl Node {
         Node {
             kind: kind,
             scaling: glm::vec3(1.0, 1.0, 1.0),
-            rotation: (0.0, glm::vec3(1.0, 0.0, 0.0)),
+            rotation: glm::identity(),
             translation: glm::vec3(0.0, 0.0, 0.0),
             model_matrix: glm::identity(),
         }
@@ -175,8 +175,12 @@ impl Node {
 
     pub fn set_rotation(&mut self, x_angle: f32, y_angle: f32, z_angle: f32) {
         let axis = glm::vec3(x_angle, y_angle, z_angle);
-        self.rotation = (glm::length(&axis), axis);
+        self.rotation = glm::rotation(glm::length(&axis), &axis);
         self.update_model_matrix();
+    }
+
+    pub fn rotate(&mut self, angle: f32, x: f32, y: f32, z: f32) {
+        self.rotation = glm::rotate(&self.rotation, angle, &glm::vec3(x, y, z));
     }
 
     pub fn set_position(&mut self, x: f32, y: f32, z: f32) {
@@ -185,10 +189,7 @@ impl Node {
     }
 
     fn update_model_matrix(&mut self) {
-        self.model_matrix =
-            glm::translation(&self.translation) *
-            glm::rotation(self.rotation.0, &self.rotation.1) *
-            glm::scaling(&self.scaling);
+        self.model_matrix = glm::translation(&self.translation) * self.rotation * glm::scaling(&self.scaling);
     }
 }
 

@@ -1,6 +1,4 @@
-- Normal maps
 - Sudden black screen when ball in lower left corner
-- Make the ball roll
 - Winning & losing
     - Restart current/start next level?
     - Texts?

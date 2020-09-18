@@ -113,12 +113,19 @@ fn main() {
     let sphere = Rc::new(graphics::Shape::from_ply(&display, "sphere.ply"));
 
     // Textures
+    println!("Loading wall texture...");
     let wall_tex = Rc::new(graphics::Texture::from_image(&display, graphics::Image::from_file("wall.jpg")));
+    println!("Loading ball texture...");
     let ball_tex = Rc::new(graphics::Texture::from_image(&display, graphics::Image::from_file("ball.jpg")));
+    println!("Loading board texture image...");
     let mut board_tex_image = graphics::Image::from_file("board.jpg");
+    println!("Adding holes to the board texture image...");
     punch_holes(&mut board_tex_image, &level1);
+    println!("Creating board texture...");
     let board_tex = Rc::new(graphics::Texture::from_image(&display, board_tex_image));
+    println!("Creating board markings texture...");
     let board_markings_tex = Rc::new(graphics::Texture::from_image(&display, graphics::Image::from_file("level1_markings.png")));
+    println!("Textures done");
 
     // The scene
     let mut scene = graphics::Scene::new(&display, w / h);
@@ -223,16 +230,28 @@ fn main() {
             _ => return,
         }
 
+        let p0 = game.ball_pos;
+
         let now = Instant::now();
         game.update(now);
 
+        let ball_pos_delta = glm::vec3(game.ball_pos.x - p0.x, 0.0, game.ball_pos.y - p0.y);
+
         match game.state {
             game::State::InProgress => {
+                // Ball position
                 scene.get_node(ball_id).set_position(
                     game.ball_pos.x - level1_half_w,
                     game::BALL_R,
                     game.ball_pos.y - level1_half_h,
                 );
+
+                // Ball rotation
+                let axis_ws = glm::normalize(&glm::rotate_vec3(&ball_pos_delta, std::f32::consts::PI / 2.0, &glm::vec3(0.0, 1.0, 0.0)));
+                let axis = glm::normalize(&(glm::inverse(&scene.get_node(ball_id).model_matrix) * glm::vec3_to_vec4(&axis_ws)).xyz());
+                scene.get_node(ball_id).rotate(glm::length(&ball_pos_delta) / game::BALL_R, axis.x, axis.y, axis.z);
+
+                // Camera movement
                 if !static_camera {
                     scene.look_at(
                         game.ball_pos.x - level1_half_w, 40.0 * game::BALL_R, game.ball_pos.y - level1_half_h + 10.0 * game::BALL_R,
