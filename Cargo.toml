@@ -5,8 +5,8 @@ authors = ["Kalle Huttunen"]
 edition = "2018"
 
 [dependencies]
-glium = "0.27.0"
-image = "0.23.9"
-json = "0.12.1"
-nalgebra-glm = "0.5.0"
-ply-rs = "0.1.2"
+glium = "0.28.0"
+image = "0.23.10"
+json = "0.12.4"
+nalgebra-glm = "0.8.0"
+ply-rs = "0.1.3"

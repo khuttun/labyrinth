@@ -89,9 +89,9 @@ fn main() {
     let mut h = display.gl_window().window().inner_size().height as f32;
 
     if fullscreen {
-        let monitor = display.gl_window().window().available_monitors().next().unwrap();
-        w = monitor.size().width as f32;
-        h = monitor.size().height as f32;
+        let monitor = display.gl_window().window().available_monitors().next();
+        w = monitor.as_ref().unwrap().size().width as f32;
+        h = monitor.as_ref().unwrap().size().height as f32;
         display.gl_window().window().set_fullscreen(Some(glutin::window::Fullscreen::Borderless(monitor)));
     }
 
