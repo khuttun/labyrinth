@@ -46,11 +46,14 @@ pub struct Instance {
     device: wgpu::Device,
     queue: wgpu::Queue,
     swap_chain: wgpu::SwapChain,
+    multisampled_fb_texture_view: wgpu::TextureView,
     depth_texture_view: wgpu::TextureView,
     uniform_bind_group_layout: wgpu::BindGroupLayout,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     render_pipeline: wgpu::RenderPipeline,
 }
+
+const MSAA_SAMPLES: u32 = 4;
 
 impl Instance {
     pub async fn new<W: HasRawWindowHandle>(window: &W, width: u32, height: u32) -> Instance {
@@ -86,6 +89,22 @@ impl Instance {
 
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
+        let multisampled_fb_texture_view = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("MSAA framebuffer texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth: 1,
+                },
+                mip_level_count: 1,
+                sample_count: MSAA_SAMPLES,
+                dimension: wgpu::TextureDimension::D2,
+                format: sc_desc.format,
+                usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+            })
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
         let depth_texture_desc = wgpu::TextureDescriptor {
             label: Some("Depth texture"),
             size: wgpu::Extent3d {
@@ -94,7 +113,7 @@ impl Instance {
                 depth: 1,
             },
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: MSAA_SAMPLES,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
@@ -220,7 +239,7 @@ impl Instance {
                     ],
                 }],
             },
-            sample_count: 1,
+            sample_count: MSAA_SAMPLES,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
         });
@@ -231,6 +250,7 @@ impl Instance {
             device,
             queue,
             swap_chain,
+            multisampled_fb_texture_view,
             depth_texture_view,
             uniform_bind_group_layout,
             texture_bind_group_layout,
@@ -322,8 +342,8 @@ impl Instance {
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &frame.view,
-                    resolve_target: None,
+                    attachment: &self.multisampled_fb_texture_view,
+                    resolve_target: Some(&frame.view),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: true,
