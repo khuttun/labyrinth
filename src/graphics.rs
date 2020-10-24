@@ -82,7 +82,7 @@ impl Instance {
 
         let sc_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            format: wgpu::TextureFormat::Bgra8Unorm,
             width,
             height,
             present_mode: wgpu::PresentMode::Fifo,
@@ -539,7 +539,7 @@ impl Texture {
             mip_level_count: MIPMAP_LEVELS,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
         });
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
