@@ -59,10 +59,10 @@ pub fn punch_holes(img: &mut graphics::Image, level: &game::Level) {
     for hole in level.holes.iter() {
         let u_mid = scale * hole.x;
         let v_mid = scale * (level.size.h - hole.y); // board and texture coordinates have opposite y-direction
-        let u_max = (u_mid + hole_r) as usize;
-        let u_min = (u_mid - hole_r) as usize;
-        let v_min = (v_mid - hole_r) as usize;
-        let v_max = (v_mid + hole_r) as usize;
+        let u_max = (u_mid + hole_r) as u32;
+        let u_min = (u_mid - hole_r) as u32;
+        let v_min = (v_mid - hole_r) as u32;
+        let v_max = (v_mid + hole_r) as u32;
         for u in u_min..u_max + 1 {
             for v in v_min..v_max + 1 {
                 if (u_mid - u as f32).powi(2) + (v_mid - v as f32).powi(2) < hole_r.powi(2) {

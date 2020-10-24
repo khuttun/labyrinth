@@ -3,6 +3,9 @@ use raw_window_handle::HasRawWindowHandle;
 use std::{iter, rc::Rc};
 use wgpu::util::DeviceExt;
 
+const MIPMAP_LEVELS: u32 = 4; // including the main texture
+const MSAA_SAMPLES: u32 = 4;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
 struct Vertex {
@@ -52,8 +55,6 @@ pub struct Instance {
     texture_bind_group_layout: wgpu::BindGroupLayout,
     render_pipeline: wgpu::RenderPipeline,
 }
-
-const MSAA_SAMPLES: u32 = 4;
 
 impl Instance {
     pub async fn new<W: HasRawWindowHandle>(window: &W, width: u32, height: u32) -> Instance {
@@ -494,10 +495,9 @@ impl Shape {
     }
 }
 
-// Move to own module? Or could the use be replaced completely with image crate?
 pub struct Image {
     name: String,
-    data: Vec<u8>,
+    data: image::RgbaImage,
     pub w: u32,
     pub h: u32,
 }
@@ -505,20 +505,19 @@ pub struct Image {
 impl Image {
     pub fn from_file(image_file: &str) -> Image {
         let image = image::open(image_file).unwrap().flipv().into_rgba();
-        let width = image.width();
-        let height = image.height();
+        let w = image.width();
+        let h = image.height();
         Image {
             name: String::from(image_file),
-            data: image.into_raw(),
-            w: width,
-            h: height,
+            data: image,
+            w,
+            h,
         }
     }
 
-    pub fn pixel(&mut self, u: usize, v: usize) -> PixelRef {
-        let begin = 4 * u + 4 * v * self.w as usize;
+    pub fn pixel(&mut self, u: u32, v: u32) -> PixelRef {
         PixelRef {
-            data: &mut self.data[begin..begin + 4],
+            data: self.data.get_pixel_mut(u, v),
         }
     }
 }
@@ -529,34 +528,20 @@ pub struct Texture {
 
 impl Texture {
     fn from_image(inst: &Instance, image: &Image) -> Texture {
-        let size = wgpu::Extent3d {
-            width: image.w,
-            height: image.h,
-            depth: 1,
-        };
+        // Create the texture, view, sampler, bind group...
         let tex = inst.device.create_texture(&wgpu::TextureDescriptor {
             label: Some(&format!("Texture {}", image.name)),
-            size,
-            mip_level_count: 1,
+            size: wgpu::Extent3d {
+                width: image.w,
+                height: image.h,
+                depth: 1,
+            },
+            mip_level_count: MIPMAP_LEVELS,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
         });
-        inst.queue.write_texture(
-            wgpu::TextureCopyView {
-                texture: &tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-            },
-            &image.data,
-            wgpu::TextureDataLayout {
-                offset: 0,
-                bytes_per_row: 4 * image.w,
-                rows_per_image: image.h,
-            },
-            size,
-        );
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = inst.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some(&format!("Sampler {}", image.name)),
@@ -582,6 +567,55 @@ impl Texture {
                 },
             ],
         });
+
+        // Upload the main texture data
+        inst.queue.write_texture(
+            wgpu::TextureCopyView {
+                texture: &tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            &image.data,
+            wgpu::TextureDataLayout {
+                offset: 0,
+                bytes_per_row: 4 * image.w,
+                rows_per_image: image.h,
+            },
+            wgpu::Extent3d {
+                width: image.w,
+                height: image.h,
+                depth: 1,
+            },
+        );
+
+        // Create mipmaps and upload their data
+        for level in 1..MIPMAP_LEVELS {
+            let mipmap = image::imageops::resize(
+                &image.data,
+                image.w / 2u32.pow(level),
+                image.h / 2u32.pow(level),
+                image::imageops::FilterType::Triangle,
+            );
+            inst.queue.write_texture(
+                wgpu::TextureCopyView {
+                    texture: &tex,
+                    mip_level: level,
+                    origin: wgpu::Origin3d::ZERO,
+                },
+                &mipmap,
+                wgpu::TextureDataLayout {
+                    offset: 0,
+                    bytes_per_row: 4 * mipmap.width(),
+                    rows_per_image: mipmap.height(),
+                },
+                wgpu::Extent3d {
+                    width: mipmap.width(),
+                    height: mipmap.height(),
+                    depth: 1,
+                },
+            );
+        }
+
         Texture { bind_group }
     }
 }
@@ -678,7 +712,7 @@ impl<'a> Iterator for SceneIterator<'a> {
 }
 
 pub struct PixelRef<'a> {
-    data: &'a mut [u8],
+    data: &'a mut image::Rgba<u8>,
 }
 
 impl<'a> PixelRef<'a> {
