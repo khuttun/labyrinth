@@ -5,8 +5,13 @@ authors = ["Kalle Huttunen"]
 edition = "2018"
 
 [dependencies]
-glium = "0.28.0"
+bytemuck = "1.4.1"
+bytemuck_derive = "1.0.0"
+futures = "0.3.7"
 image = "0.23.10"
 json = "0.12.4"
 nalgebra-glm = "0.8.0"
 ply-rs = "0.1.3"
+raw-window-handle = "0.3.3"
+winit = "0.23.0"
+wgpu = "0.6.0"

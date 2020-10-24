@@ -1,24 +1,28 @@
-#version 330
+#version 450
 
-uniform mat4 modelView;
-uniform mat3 normalModelView;
-uniform mat4 projection;
+layout(location=0) in vec3 position;
+layout(location=1) in vec3 normal;
+layout(location=2) in vec2 texCoords;
 
-in vec3 position;
-in vec3 normal;
-in vec2 tex_coords;
+layout(location=0) out vec3 fragPosCamSpace;
+layout(location=1) out vec3 fragNormalCamSpace;
+layout(location=2) out vec2 fragTexCoords;
 
-out vec3 fragPosCamSpace;
-out vec3 fragNormalCamSpace;
-out vec2 fragTexCoords;
+layout(set=0, binding=0) 
+uniform Uniforms {
+    mat4 modelView;
+    mat4 normalModelView;
+    mat4 projection;
+    vec4 lightPosCamSpace;
+};
 
 void main()
 {
     vec4 p = modelView * vec4(position, 1.0);
 
     fragPosCamSpace = p.xyz;
-    fragNormalCamSpace = normalize(normalModelView * normal);
-    fragTexCoords = tex_coords;
+    fragNormalCamSpace = normalize(mat3(normalModelView) * normal);
+    fragTexCoords = texCoords;
 
     gl_Position = projection * p;
 }

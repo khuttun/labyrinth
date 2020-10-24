@@ -1,3 +1,4 @@
+/src/*.spv
 /target
 .DS_Store
 Cargo.lock

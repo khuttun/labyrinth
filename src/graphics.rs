@@ -1,131 +1,568 @@
 use nalgebra_glm as glm;
-use std::rc::Rc;
+use raw_window_handle::HasRawWindowHandle;
+use std::{iter, rc::Rc};
+use wgpu::util::DeviceExt;
 
-#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
 struct Vertex {
     position: [f32; 3],
     normal: [f32; 3],
     tex_coords: [f32; 2],
 }
 
-glium::implement_vertex!(Vertex, position, normal, tex_coords);
-
-pub struct Shape {
-    vertex_buffer: glium::VertexBuffer<Vertex>,
-    index_buffer: glium::IndexBuffer<u32>,
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
+struct Uniforms {
+    model_view: [[f32; 4]; 4],
+    model_view_normal: [[f32; 4]; 4],
+    projection: [[f32; 4]; 4],
+    light_pos_cam_space: [f32; 4], // Only xyz components used. The vector is 4D to satisfy GLSL uniform alignment requirements.
 }
 
-fn as_float(property: &ply_rs::ply::Property) -> f32 {
-    match property {
-        ply_rs::ply::Property::Float(value) => *value,
-        _ => panic!("Property was not Float"),
+impl Uniforms {
+    fn new() -> Uniforms {
+        Uniforms {
+            model_view: [[0.0; 4]; 4],
+            model_view_normal: [[0.0; 4]; 4],
+            projection: [[0.0; 4]; 4],
+            light_pos_cam_space: [0.0; 4],
+        }
     }
-}
 
-fn as_list_uint(property: &ply_rs::ply::Property) -> Vec<u32> {
-    match property {
-        ply_rs::ply::Property::ListUInt(value) => value.clone(),
-        _ => panic!("Property was not ListUInt"),
-    }
-}
-
-impl Shape {
-    pub fn from_ply<F>(facade: &F, ply_file: &str) -> Shape
-        where F: glium::backend::Facade
-    {
-        let p = ply_rs::parser::Parser::<ply_rs::ply::DefaultElement>::new();
-        let mut f = std::fs::File::open(ply_file).unwrap();
-        let ply = p.read_ply(&mut f).unwrap();
-
-        let vertices: Vec<Vertex> = ply.payload["vertex"].iter().map(
-            |v| Vertex{
-                position: [as_float(&v["x"]), as_float(&v["y"]), as_float(&v["z"])],
-                normal: [as_float(&v["nx"]), as_float(&v["ny"]), as_float(&v["nz"])],
-                tex_coords: [as_float(&v["s"]), as_float(&v["t"])],
-            }).collect();
-
-        // println!("Vertices (length {}): {:?}", vertices.len(), vertices);
-
-        let indices: Vec<u32> = ply.payload["face"].iter().map(
-            |f| {
-                let vis = as_list_uint(&f["vertex_indices"]);
-                assert!(vis.len() == 3, "{} contains non-triangle faces", ply_file);
-                vis
-            }).flatten().collect();
-
-        // println!("Indices (length {}): {:?}", indices.len(), indices);
-
-        Shape {
-            vertex_buffer: glium::VertexBuffer::new(facade, &vertices).unwrap(),
-            index_buffer: glium::IndexBuffer::new(facade, glium::index::PrimitiveType::TrianglesList, &indices).unwrap(),
+    fn from(mv: &glm::Mat4, proj: &glm::Mat4, light: &glm::Vec4) -> Uniforms {
+        Uniforms {
+            model_view: mv.clone().into(),
+            model_view_normal: glm::transpose(&glm::inverse(mv)).into(),
+            projection: proj.clone().into(),
+            light_pos_cam_space: light.clone().into(),
         }
     }
 }
 
-pub struct PixelRef<'a> {
-    data: &'a mut [u8]
+pub struct Instance {
+    width: u32,
+    height: u32,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    swap_chain: wgpu::SwapChain,
+    depth_texture_view: wgpu::TextureView,
+    uniform_bind_group_layout: wgpu::BindGroupLayout,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
+    render_pipeline: wgpu::RenderPipeline,
 }
 
-impl<'a> PixelRef<'a> {
-    pub fn r(&mut self) -> &mut u8 {
-        &mut self.data[0]
+impl Instance {
+    pub async fn new<W: HasRawWindowHandle>(window: &W, width: u32, height: u32) -> Instance {
+        let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+        let surface = unsafe { instance.create_surface(window) };
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::Default,
+                compatible_surface: Some(&surface),
+            })
+            .await
+            .unwrap();
+
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    features: wgpu::Features::empty(),
+                    limits: wgpu::Limits::default(),
+                    shader_validation: true,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        let sc_desc = wgpu::SwapChainDescriptor {
+            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            width,
+            height,
+            present_mode: wgpu::PresentMode::Fifo,
+        };
+
+        let swap_chain = device.create_swap_chain(&surface, &sc_desc);
+
+        let depth_texture_desc = wgpu::TextureDescriptor {
+            label: Some("Depth texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+        };
+
+        let depth_texture_view = device
+            .create_texture(&depth_texture_desc)
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Uniform bind group layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::UniformBuffer {
+                        dynamic: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Texture bind group layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::SampledTexture {
+                            multisampled: false,
+                            dimension: wgpu::TextureViewDimension::D2,
+                            component_type: wgpu::TextureComponentType::Float,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler { comparison: false },
+                        count: None,
+                    },
+                ],
+            });
+
+        // Shaders compiled with `glslangValidator -V -o <output> -e main <input>`
+        let vs_module = device.create_shader_module(wgpu::include_spirv!("default.vert.spv"));
+        let fs_module = device.create_shader_module(wgpu::include_spirv!("default.frag.spv"));
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render pipeline layout"),
+                bind_group_layouts: &[&uniform_bind_group_layout, &texture_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex_stage: wgpu::ProgrammableStageDescriptor {
+                module: &vs_module,
+                entry_point: "main",
+            },
+            fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+                module: &fs_module,
+                entry_point: "main",
+            }),
+            rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: wgpu::CullMode::Back,
+                depth_bias: 0,
+                depth_bias_slope_scale: 0.0,
+                depth_bias_clamp: 0.0,
+                clamp_depth: false,
+            }),
+            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+            color_states: &[wgpu::ColorStateDescriptor {
+                format: sc_desc.format,
+                // Alpha blending as done in glium::Blend::alpha_blending().
+                color_blend: wgpu::BlendDescriptor {
+                    src_factor: wgpu::BlendFactor::SrcAlpha,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha_blend: wgpu::BlendDescriptor {
+                    src_factor: wgpu::BlendFactor::SrcAlpha,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                write_mask: wgpu::ColorWrite::ALL,
+            }],
+            depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
+                format: depth_texture_desc.format,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilStateDescriptor::default(),
+            }),
+            vertex_state: wgpu::VertexStateDescriptor {
+                index_format: wgpu::IndexFormat::Uint32,
+                vertex_buffers: &[wgpu::VertexBufferDescriptor {
+                    stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+                    step_mode: wgpu::InputStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttributeDescriptor {
+                            // position
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float3,
+                        },
+                        wgpu::VertexAttributeDescriptor {
+                            // normal
+                            offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float3,
+                        },
+                        wgpu::VertexAttributeDescriptor {
+                            // tex_coords
+                            offset: 2 * std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float2,
+                        },
+                    ],
+                }],
+            },
+            sample_count: 1,
+            sample_mask: !0,
+            alpha_to_coverage_enabled: false,
+        });
+
+        Instance {
+            width,
+            height,
+            device,
+            queue,
+            swap_chain,
+            depth_texture_view,
+            uniform_bind_group_layout,
+            texture_bind_group_layout,
+            render_pipeline,
+        }
     }
 
-    pub fn g(&mut self) -> &mut u8 {
-        &mut self.data[1]
+    pub fn create_scene(&self) -> Scene {
+        Scene::new(self.width as f32 / self.height as f32)
     }
 
-    pub fn b(&mut self) -> &mut u8 {
-        &mut self.data[2]
+    pub fn create_shape(&self, ply_file: &str) -> Shape {
+        Shape::from_ply(self, ply_file)
     }
 
-    pub fn a(&mut self) -> &mut u8 {
-        &mut self.data[3]
+    pub fn create_texture(&self, image: &Image) -> Texture {
+        Texture::from_image(self, image)
+    }
+
+    pub fn create_object(&self, s: &Rc<Shape>, t: &Rc<Texture>) -> Node {
+        let buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Uniform buffer"),
+                contents: bytemuck::cast_slice(&[Uniforms::new()]),
+                usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Uniform bind group"),
+            layout: &self.uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(buf.slice(..)),
+            }],
+        });
+        Node::new(NodeKind::Object {
+            shape: Rc::clone(s),
+            texture: Rc::clone(t),
+            uniform_buffer: buf,
+            uniform_bind_group: bind_group,
+        })
+    }
+
+    pub fn create_transformation(&self) -> Node {
+        Node::new(NodeKind::Transformation)
+    }
+
+    pub fn render_scene(&mut self, scene: &Scene) {
+        // 1. update uniforms
+        let light_pos_cam_space = scene.view_matrix * scene.light_position;
+        for (id, n) in scene.nodes.iter().enumerate() {
+            match &n.node.kind {
+                NodeKind::Object {
+                    shape: _,
+                    texture: _,
+                    uniform_buffer,
+                    uniform_bind_group: _,
+                } => {
+                    let effective_model_matrix = SceneIterator::new(scene, id)
+                        .fold(glm::identity(), |acc, node| node.model_matrix * acc);
+                    let model_view = scene.view_matrix * effective_model_matrix;
+                    self.queue.write_buffer(
+                        &uniform_buffer,
+                        0,
+                        bytemuck::cast_slice(&[Uniforms::from(
+                            &model_view,
+                            &scene.perspective_matrix,
+                            &light_pos_cam_space,
+                        )]),
+                    );
+                }
+                NodeKind::Transformation => (), // no uniforms to update
+            }
+        }
+
+        // 2. Draw
+        let frame = self
+            .swap_chain
+            .get_current_frame()
+            .expect("Timeout getting texture")
+            .output;
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render encoder"),
+            });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: &frame.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: true,
+                    },
+                }],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                    attachment: &self.depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true,
+                    }),
+                    stencil_ops: None,
+                }),
+            });
+
+            render_pass.set_pipeline(&self.render_pipeline);
+
+            for n in scene.nodes.iter() {
+                match &n.node.kind {
+                    NodeKind::Object {
+                        shape,
+                        texture,
+                        uniform_buffer: _,
+                        uniform_bind_group,
+                    } => {
+                        render_pass.set_bind_group(0, &uniform_bind_group, &[]);
+                        render_pass.set_bind_group(1, &texture.bind_group, &[]);
+                        render_pass.set_vertex_buffer(0, shape.vertex_buffer.slice(..));
+                        render_pass.set_index_buffer(shape.index_buffer.slice(..));
+                        render_pass.draw_indexed(0..shape.index_count as u32, 0, 0..1);
+                    }
+                    NodeKind::Transformation => (), // nothing to draw
+                }
+            }
+        }
+
+        self.queue.submit(iter::once(encoder.finish()));
     }
 }
 
+pub struct Scene {
+    nodes: Vec<SceneNode>,
+    view_matrix: glm::Mat4x4,
+    perspective_matrix: glm::Mat4x4,
+    light_position: glm::Vec4,
+}
+
+impl Scene {
+    fn new(aspect: f32) -> Scene {
+        Scene {
+            nodes: Vec::new(),
+            view_matrix: glm::look_at(
+                &glm::vec3(0.0, 5.0, 5.0),
+                &glm::vec3(0.0, 0.0, 0.0),
+                &glm::vec3(0.0, 1.0, 0.0),
+            ),
+            perspective_matrix: glm::perspective(
+                aspect,
+                glm::radians(&glm::vec1(45.0)).x,
+                2.0,
+                2000.0,
+            ),
+            light_position: glm::vec4(0.0, 5.0, 0.0, 1.0),
+        }
+    }
+
+    pub fn add_node(&mut self, node: Node, parent: Option<NodeId>) -> NodeId {
+        self.nodes.push(SceneNode {
+            node: node,
+            parent: parent,
+        });
+        self.nodes.len() - 1
+    }
+
+    pub fn get_node(&mut self, id: NodeId) -> &mut Node {
+        &mut self.nodes[id].node
+    }
+
+    pub fn look_at(
+        &mut self,
+        cam_x: f32,
+        cam_y: f32,
+        cam_z: f32,
+        center_x: f32,
+        center_y: f32,
+        center_z: f32,
+    ) {
+        self.view_matrix = glm::look_at(
+            &glm::vec3(cam_x, cam_y, cam_z),
+            &glm::vec3(center_x, center_y, center_z),
+            &glm::vec3(0.0, 1.0, 0.0),
+        );
+    }
+
+    pub fn set_light_position(&mut self, x: f32, y: f32, z: f32) {
+        self.light_position = glm::vec4(x, y, z, 1.0);
+    }
+}
+
+pub struct Shape {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    index_count: usize,
+}
+
+impl Shape {
+    fn from_ply(inst: &Instance, ply_file: &str) -> Shape {
+        let p = ply_rs::parser::Parser::<ply_rs::ply::DefaultElement>::new();
+        let mut f = std::fs::File::open(ply_file).unwrap();
+        let ply = p.read_ply(&mut f).unwrap();
+
+        let vertices: Vec<Vertex> = ply.payload["vertex"]
+            .iter()
+            .map(|v| Vertex {
+                position: [as_float(&v["x"]), as_float(&v["y"]), as_float(&v["z"])],
+                normal: [as_float(&v["nx"]), as_float(&v["ny"]), as_float(&v["nz"])],
+                tex_coords: [as_float(&v["s"]), as_float(&v["t"])],
+            })
+            .collect();
+
+        let indices: Vec<u32> = ply.payload["face"]
+            .iter()
+            .map(|f| {
+                let vis = as_list_uint(&f["vertex_indices"]);
+                assert!(vis.len() == 3, "{} contains non-triangle faces", ply_file);
+                vis
+            })
+            .flatten()
+            .collect();
+
+        Shape {
+            vertex_buffer: inst
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(&format!("Vertex Buffer {}", ply_file)),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsage::VERTEX,
+                }),
+            index_buffer: inst
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(&format!("Index Buffer {}", ply_file)),
+                    contents: bytemuck::cast_slice(&indices),
+                    usage: wgpu::BufferUsage::INDEX,
+                }),
+            index_count: indices.len(),
+        }
+    }
+}
+
+// Move to own module? Or could the use be replaced completely with image crate?
 pub struct Image {
+    name: String,
     data: Vec<u8>,
     pub w: u32,
     pub h: u32,
 }
 
 impl Image {
-    pub fn solid_color(r: u8, g: u8, b: u8) -> Image {
-        Image { data: vec![r, g, b, 255], w: 1, h: 1 }
-    }
-
-    pub fn solid_color_sized(r: u8, g: u8, b: u8, w: u32, h: u32) -> Image {
-        Image { data: [r, g, b, 255].iter().cloned().cycle().take((4 * w * h) as usize).collect(), w: w, h: h }
-    }
-
     pub fn from_file(image_file: &str) -> Image {
         let image = image::open(image_file).unwrap().flipv().into_rgba();
         let width = image.width();
         let height = image.height();
-        Image { data: image.into_raw(), w: width, h: height }
+        Image {
+            name: String::from(image_file),
+            data: image.into_raw(),
+            w: width,
+            h: height,
+        }
     }
 
     pub fn pixel(&mut self, u: usize, v: usize) -> PixelRef {
         let begin = 4 * u + 4 * v * self.w as usize;
-        PixelRef { data: &mut self.data[begin .. begin + 4] }
+        PixelRef {
+            data: &mut self.data[begin..begin + 4],
+        }
     }
 }
 
 pub struct Texture {
-    data: glium::texture::texture2d::Texture2d,
+    bind_group: wgpu::BindGroup,
 }
 
 impl Texture {
-    pub fn from_image<F>(facade: &F, image: Image) -> Texture
-        where F: glium::backend::Facade
-    {
-        Texture {
-            data: glium::texture::texture2d::Texture2d::new(
-                facade,
-                glium::texture::RawImage2d::from_raw_rgba(image.data, (image.w, image.h))
-            ).unwrap()
-        }
+    fn from_image(inst: &Instance, image: &Image) -> Texture {
+        let size = wgpu::Extent3d {
+            width: image.w,
+            height: image.h,
+            depth: 1,
+        };
+        let tex = inst.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(&format!("Texture {}", image.name)),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+        });
+        inst.queue.write_texture(
+            wgpu::TextureCopyView {
+                texture: &tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            &image.data,
+            wgpu::TextureDataLayout {
+                offset: 0,
+                bytes_per_row: 4 * image.w,
+                rows_per_image: image.h,
+            },
+            size,
+        );
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = inst.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some(&format!("Sampler {}", image.name)),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let bind_group = inst.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(&format!("Texture bind group {}", image.name)),
+            layout: &inst.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        Texture { bind_group }
     }
 }
 
@@ -133,6 +570,8 @@ enum NodeKind {
     Object {
         shape: Rc<Shape>,
         texture: Rc<Texture>,
+        uniform_buffer: wgpu::Buffer,
+        uniform_bind_group: wgpu::BindGroup,
     },
     Transformation,
 }
@@ -146,18 +585,6 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn object(s: &Rc<Shape>, t: &Rc<Texture>) -> Node
-    {
-        Node::new(NodeKind::Object {
-            shape: Rc::clone(s),
-            texture: Rc::clone(t),
-        })
-    }
-
-    pub fn transformation() -> Node {
-        Node::new(NodeKind::Transformation)
-    }
-
     fn new(kind: NodeKind) -> Node {
         Node {
             kind: kind,
@@ -189,7 +616,8 @@ impl Node {
     }
 
     fn update_model_matrix(&mut self) {
-        self.model_matrix = glm::translation(&self.translation) * self.rotation * glm::scaling(&self.scaling);
+        self.model_matrix =
+            glm::translation(&self.translation) * self.rotation * glm::scaling(&self.scaling);
     }
 }
 
@@ -208,7 +636,10 @@ struct SceneIterator<'a> {
 
 impl<'a> SceneIterator<'a> {
     fn new(scene: &'a Scene, id: NodeId) -> Self {
-        SceneIterator { nodes: &scene.nodes, next: Some(id) }
+        SceneIterator {
+            nodes: &scene.nodes,
+            next: Some(id),
+        }
     }
 }
 
@@ -226,98 +657,38 @@ impl<'a> Iterator for SceneIterator<'a> {
     }
 }
 
-pub struct Scene {
-    nodes: Vec<SceneNode>,
-    view_matrix: glm::Mat4x4,
-    perspective_matrix: glm::Mat4x4,
-    light_position: glm::Vec4,
-    default_shaders: glium::program::Program,
+pub struct PixelRef<'a> {
+    data: &'a mut [u8],
 }
 
-impl Scene {
-    pub fn new<F>(facade: &F, aspect: f32) -> Scene
-        where F: glium::backend::Facade
-    {
-        Scene {
-            nodes: Vec::new(),
-            view_matrix: glm::look_at(&glm::vec3(0.0, 5.0, 5.0), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0)),
-            perspective_matrix: glm::perspective(aspect, glm::radians(&glm::vec1(45.0)).x, 2.0, 2000.0),
-            light_position: glm::vec4(0.0, 5.0, 0.0, 1.0),
-            default_shaders: glium::program::Program::new(
-                facade,
-                glium::program::ProgramCreationInput::SourceCode {
-                    vertex_shader: include_str!("default.vert"),
-                    fragment_shader: include_str!("default.frag"),
-                    geometry_shader: None,
-                    tessellation_control_shader: None,
-                    tessellation_evaluation_shader: None,
-                    transform_feedback_varyings: None,
-                    outputs_srgb: true, // set true so that glium doesn't enable GL_FRAMEBUFFER_SRGB
-                    uses_point_size: false,
-                }
-            ).unwrap(),
-        }
+impl<'a> PixelRef<'a> {
+    pub fn r(&mut self) -> &mut u8 {
+        &mut self.data[0]
     }
 
-    pub fn add_node(&mut self, node: Node, parent: Option<NodeId>) -> NodeId {
-        self.nodes.push(SceneNode {node: node, parent: parent });
-        self.nodes.len() - 1
+    pub fn g(&mut self) -> &mut u8 {
+        &mut self.data[1]
     }
 
-    pub fn get_node(&mut self, id: NodeId) -> &mut Node {
-        &mut self.nodes[id].node
+    pub fn b(&mut self) -> &mut u8 {
+        &mut self.data[2]
     }
 
-    pub fn look_at(&mut self, cam_x: f32, cam_y: f32, cam_z: f32, center_x: f32, center_y: f32, center_z: f32) {
-        self.view_matrix = glm::look_at(
-            &glm::vec3(cam_x, cam_y, cam_z),
-            &glm::vec3(center_x, center_y, center_z),
-            &glm::vec3(0.0, 1.0, 0.0));
+    pub fn a(&mut self) -> &mut u8 {
+        &mut self.data[3]
     }
+}
 
-    pub fn set_light_position(&mut self, x: f32, y: f32, z: f32) {
-        self.light_position = glm::vec4(x, y, z, 1.0);
+fn as_float(property: &ply_rs::ply::Property) -> f32 {
+    match property {
+        ply_rs::ply::Property::Float(value) => *value,
+        _ => panic!("Property was not Float"),
     }
+}
 
-    pub fn draw<S>(&self, surface: &mut S)
-        where S: glium::Surface
-    {
-        surface.clear_color_and_depth((0.0, 0.0, 0.0, 1.0), 1.0);
-        let projection_array: [[f32; 4]; 4] = self.perspective_matrix.into();
-        let light_pos_array: [f32; 3] = (self.view_matrix * self.light_position).xyz().into();
-        for (id, n) in self.nodes.iter().enumerate() {
-            match &n.node.kind {
-                NodeKind::Object { shape, texture } => {
-                    let effective_model_matrix = SceneIterator::new(self, id)
-                        .fold(glm::identity(), |acc, node| node.model_matrix * acc);
-                    let model_view = self.view_matrix * effective_model_matrix;
-                    let mv_array: [[f32; 4]; 4] = model_view.into();
-                    let nmv_array: [[f32; 3]; 3] = glm::transpose(&glm::inverse(&glm::mat4_to_mat3(&model_view))).into();
-                    surface.draw(
-                        &shape.vertex_buffer,
-                        &shape.index_buffer,
-                        &self.default_shaders,
-                        &glium::uniform! {
-                            modelView: mv_array,
-                            normalModelView: nmv_array,
-                            projection: projection_array,
-                            lightPosCamSpace: light_pos_array,
-                            tex: &texture.data,
-                        },
-                        &glium::DrawParameters {
-                            blend: glium::Blend::alpha_blending(),
-                            depth: glium::Depth {
-                                test: glium::DepthTest::IfLess,
-                                write: true,
-                                .. Default::default()
-                            },
-                            backface_culling: glium::draw_parameters::BackfaceCullingMode::CullClockwise,
-                            .. Default::default()
-                        }
-                    ).unwrap();
-                },
-                NodeKind::Transformation => (), // nothing to draw
-            }
-        }
+fn as_list_uint(property: &ply_rs::ply::Property) -> Vec<u32> {
+    match property {
+        ply_rs::ply::Property::ListUInt(value) => value.clone(),
+        _ => panic!("Property was not ListUInt"),
     }
 }
