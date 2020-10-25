@@ -3,9 +3,6 @@ use raw_window_handle::HasRawWindowHandle;
 use std::{iter, rc::Rc};
 use wgpu::util::DeviceExt;
 
-const MIPMAP_LEVELS: u32 = 4; // including the main texture
-const MSAA_SAMPLES: u32 = 4;
-
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
 struct Vertex {
@@ -43,7 +40,23 @@ impl Uniforms {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct Config {
+    pub msaa_samples: u32,
+    pub mipmap_levels: u32,
+}
+
+impl Config {
+    pub fn new() -> Config {
+        Config {
+            msaa_samples: 4,
+            mipmap_levels: 6,
+        }
+    }
+}
+
 pub struct Instance {
+    config: Config,
     width: u32,
     height: u32,
     device: wgpu::Device,
@@ -57,7 +70,12 @@ pub struct Instance {
 }
 
 impl Instance {
-    pub async fn new<W: HasRawWindowHandle>(window: &W, width: u32, height: u32) -> Instance {
+    pub async fn new<W: HasRawWindowHandle>(
+        config: Config,
+        window: &W,
+        width: u32,
+        height: u32,
+    ) -> Instance {
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
         let surface = unsafe { instance.create_surface(window) };
         let adapter = instance
@@ -99,7 +117,7 @@ impl Instance {
                     depth: 1,
                 },
                 mip_level_count: 1,
-                sample_count: MSAA_SAMPLES,
+                sample_count: config.msaa_samples,
                 dimension: wgpu::TextureDimension::D2,
                 format: sc_desc.format,
                 usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
@@ -114,7 +132,7 @@ impl Instance {
                 depth: 1,
             },
             mip_level_count: 1,
-            sample_count: MSAA_SAMPLES,
+            sample_count: config.msaa_samples,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
@@ -240,12 +258,13 @@ impl Instance {
                     ],
                 }],
             },
-            sample_count: MSAA_SAMPLES,
+            sample_count: config.msaa_samples,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
         });
 
         Instance {
+            config,
             width,
             height,
             device,
@@ -536,7 +555,7 @@ impl Texture {
                 height: image.h,
                 depth: 1,
             },
-            mip_level_count: MIPMAP_LEVELS,
+            mip_level_count: inst.config.mipmap_levels,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
@@ -589,7 +608,7 @@ impl Texture {
         );
 
         // Create mipmaps and upload their data
-        for level in 1..MIPMAP_LEVELS {
+        for level in 1..inst.config.mipmap_levels {
             let mipmap = image::imageops::resize(
                 &image.data,
                 image.w / 2u32.pow(level),

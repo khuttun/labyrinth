@@ -1,5 +1,5 @@
-use std::env;
 use std::rc::Rc;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 mod game;
 mod graphics;
@@ -74,8 +74,21 @@ pub fn punch_holes(img: &mut graphics::Image, level: &game::Level) {
 }
 
 fn main() {
-    let fullscreen = env::args().any(|arg| arg == "-f");
-    let static_camera = env::args().any(|arg| arg == "-s");
+    let args = clap::App::new("labyrinth")
+        .args_from_usage(
+            "-f                    'Sets fullscreen mode'
+            -s                    'Sets static camera'
+            -m, --mipmap=[LEVELS] 'Sets the number of texture mipmap levels to use'",
+        )
+        .get_matches();
+
+    let fullscreen = args.is_present("f");
+    let static_camera = args.is_present("s");
+
+    let mut gfx_cfg = graphics::Config::new();
+    if let Some(val) = args.value_of("mipmap") {
+        gfx_cfg.mipmap_levels = u32::from_str(val).expect("Invalid mipmap levels option");
+    }
 
     let event_loop = winit::event_loop::EventLoop::new();
     let window = winit::window::Window::new(&event_loop).unwrap();
@@ -103,7 +116,7 @@ fn main() {
     let level1_half_w = level1.size.w / 2.0;
     let level1_half_h = level1.size.h / 2.0;
 
-    let mut gfx = futures::executor::block_on(graphics::Instance::new(&window, w, h));
+    let mut gfx = futures::executor::block_on(graphics::Instance::new(gfx_cfg, &window, w, h));
 
     // Shapes
     let quad = Rc::new(gfx.create_shape("quad.ply"));
