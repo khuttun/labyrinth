@@ -80,7 +80,7 @@ impl Instance {
         let surface = unsafe { instance.create_surface(window) };
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::Default,
+                power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
             })
             .await
@@ -204,6 +204,7 @@ impl Instance {
             rasterization_state: Some(wgpu::RasterizationStateDescriptor {
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: wgpu::CullMode::Back,
+                polygon_mode: wgpu::PolygonMode::Fill,
                 depth_bias: 0,
                 depth_bias_slope_scale: 0.0,
                 depth_bias_clamp: 0.0,
@@ -303,7 +304,7 @@ impl Instance {
             layout: &self.uniform_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer(buf.slice(..)),
+                resource: buf.as_entire_binding(),
             }],
         });
         Node::new(NodeKind::Object {
@@ -318,7 +319,7 @@ impl Instance {
         Node::new(NodeKind::Transformation)
     }
 
-    pub fn render_scene(&mut self, scene: &Scene) {
+    pub fn render_scene(&self, scene: &Scene) {
         // 1. update uniforms
         let light_pos_cam_space = scene.view_matrix * scene.light_position;
         for (id, n) in scene.nodes.iter().enumerate() {

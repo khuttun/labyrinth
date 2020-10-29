@@ -1,6 +1,8 @@
+use instant::Instant;
 use std::rc::Rc;
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
 mod game;
 mod graphics;
 
@@ -116,7 +118,7 @@ fn main() {
     let level1_half_w = level1.size.w / 2.0;
     let level1_half_h = level1.size.h / 2.0;
 
-    let mut gfx = futures::executor::block_on(graphics::Instance::new(gfx_cfg, &window, w, h));
+    let gfx = futures::executor::block_on(graphics::Instance::new(gfx_cfg, &window, w, h));
 
     // Shapes
     let quad = Rc::new(gfx.create_shape("quad.ply"));
