@@ -102,9 +102,9 @@ pub struct Level {
 }
 
 impl Level {
-    pub fn from_json(file_name: &str) -> Level {
+    pub fn from_json_str(json_str: &str) -> Level {
         // TODO: check that no walls/holes/board edges collide
-        let data = json::parse(&std::fs::read_to_string(file_name).unwrap()).unwrap();
+        let data = json::parse(json_str).unwrap();
         Level {
             name: String::from(data["name"].as_str().unwrap()),
             size: Size::from(&data["size"]),
@@ -113,6 +113,10 @@ impl Level {
             walls: data["walls"].members().map(|j| Rect::from(j)).collect(),
             holes: data["holes"].members().map(|j| Point::from(j)).collect(),
         }
+    }
+
+    pub fn from_json_file(file_name: &str) -> Level {
+        Level::from_json_str(&std::fs::read_to_string(file_name).unwrap())
     }
 }
 

@@ -93,7 +93,7 @@ fn main() {
     }
 
     let event_loop = winit::event_loop::EventLoop::new();
-    let window = winit::window::Window::new(&event_loop).unwrap();
+    let window = winit::window::Window::new(&event_loop).expect("Failed to create window");
 
     let mut w = window.inner_size().width;
     let mut h = window.inner_size().height;
@@ -107,14 +107,38 @@ fn main() {
 
     println!("Window size {} x {}", w, h);
 
-    window
-        .set_cursor_position(winit::dpi::PhysicalPosition::new(w / 2, h / 2))
-        .unwrap();
+    #[cfg(target_arch = "wasm32")]
+    {
+        use winit::platform::web::WindowExtWebSys;
+        console_log::init().expect("could not initialize logger");
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        // On wasm, append the canvas to the document body
+        web_sys::window()
+            .and_then(|win| win.document())
+            .and_then(|doc| doc.body())
+            .and_then(|body| {
+                body.append_child(&web_sys::Element::from(window.canvas()))
+                    .ok()
+            })
+            .expect("couldn't append canvas to document body");
+    }
+
     window.set_cursor_visible(false);
-    window.set_cursor_grab(true).unwrap();
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        window
+            .set_cursor_position(winit::dpi::PhysicalPosition::new(w / 2, h / 2))
+            .expect("Failed center cursor");
+        window.set_cursor_grab(true).expect("Failed to grab cursor");
+    }
 
     // Create a level and set up the scene based on it
-    let level1 = game::Level::from_json("level1.json");
+    #[cfg(target_arch = "wasm32")]
+    let level1 = game::Level::from_json_str(include_str!("../level1.json"));
+    #[cfg(not(target_arch = "wasm32"))]
+    let level1 = game::Level::from_json_file("level1.json");
+
     let level1_half_w = level1.size.w / 2.0;
     let level1_half_h = level1.size.h / 2.0;
 
