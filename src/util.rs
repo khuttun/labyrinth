@@ -5,9 +5,8 @@ use nalgebra_glm as glm;
 use std::rc::Rc;
 use std::time::Duration;
 
-pub fn play_level(
+pub fn play(
     level: game::Level,
-    level_markings_file: &str,
     gfx: graphics::Instance,
     event_loop: winit::event_loop::EventLoop<()>,
     static_camera: bool,
@@ -16,24 +15,35 @@ pub fn play_level(
     let level_half_h = level.size.h / 2.0;
 
     // Shapes
-    let quad = Rc::new(gfx.create_shape("quad.ply"));
-    let cube = Rc::new(gfx.create_shape("cube.ply"));
-    let sphere = Rc::new(gfx.create_shape("sphere.ply"));
+    let quad = Rc::new(gfx.create_shape("quad", include_str!("quad.ply")));
+    let cube = Rc::new(gfx.create_shape("cube", include_str!("cube.ply")));
+    let sphere = Rc::new(gfx.create_shape("sphere", include_str!("sphere.ply")));
 
     // Textures
     println!("Loading wall texture...");
-    let wall_tex = Rc::new(gfx.create_texture(&graphics::Image::from_file("wall.jpg")));
+    let wall_img = create_image(include_bytes!("wall.jpg"), image::ImageFormat::Jpeg);
+    let wall_tex =
+        Rc::new(gfx.create_texture("wall", wall_img.width(), wall_img.height(), &wall_img));
     println!("Loading ball texture...");
-    let ball_tex = Rc::new(gfx.create_texture(&graphics::Image::from_file("ball.jpg")));
-    println!("Loading board texture image...");
-    let mut board_tex_image = graphics::Image::from_file("board.jpg");
-    println!("Adding holes to the board texture image...");
-    punch_holes(&mut board_tex_image, &level);
-    println!("Creating board texture...");
-    let board_tex = Rc::new(gfx.create_texture(&board_tex_image));
+    let ball_img = create_image(include_bytes!("ball.jpg"), image::ImageFormat::Jpeg);
+    let ball_tex =
+        Rc::new(gfx.create_texture("ball", ball_img.width(), ball_img.height(), &ball_img));
+    println!("Loading board texture...");
+    let mut board_img = create_image(include_bytes!("board.jpg"), image::ImageFormat::Jpeg);
+    punch_holes(&mut board_img, &level);
+    let board_tex =
+        Rc::new(gfx.create_texture("board", board_img.width(), board_img.height(), &board_img));
     println!("Creating board markings texture...");
-    let board_markings_tex =
-        Rc::new(gfx.create_texture(&graphics::Image::from_file(level_markings_file)));
+    let board_markings_img = create_image(
+        include_bytes!("level1_markings.png"),
+        image::ImageFormat::Png,
+    );
+    let board_markings_tex = Rc::new(gfx.create_texture(
+        "markings",
+        board_markings_img.width(),
+        board_markings_img.height(),
+        &board_markings_img,
+    ));
     println!("Textures done");
 
     // The scene
@@ -294,8 +304,8 @@ fn board_wall(
 
 // Draw transparent circles to `img` based on the hole locations of `level`.
 // The image and the level can be different size but their w/h ratio should be the same.
-fn punch_holes(img: &mut graphics::Image, level: &game::Level) {
-    let scale = img.w as f32 / level.size.w;
+fn punch_holes(img: &mut image::RgbaImage, level: &game::Level) {
+    let scale = img.width() as f32 / level.size.w;
     let hole_r = scale * game::HOLE_R;
     for hole in level.holes.iter() {
         let u_mid = scale * hole.x;
@@ -307,7 +317,7 @@ fn punch_holes(img: &mut graphics::Image, level: &game::Level) {
         for u in u_min..u_max + 1 {
             for v in v_min..v_max + 1 {
                 if (u_mid - u as f32).powi(2) + (v_mid - v as f32).powi(2) < hole_r.powi(2) {
-                    *img.pixel(u, v).a() = 0;
+                    img.get_pixel_mut(u, v)[3] = 0;
                 }
             }
         }
@@ -352,4 +362,12 @@ fn animate_ball_falling_in_hole(
         )),
         _ => None,
     }
+}
+
+// Create an image suitable for texture use from raw image file bytes
+fn create_image(bytes: &[u8], format: image::ImageFormat) -> image::RgbaImage {
+    image::load_from_memory_with_format(bytes, format)
+        .unwrap()
+        .flipv()
+        .into_rgba()
 }

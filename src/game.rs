@@ -86,7 +86,10 @@ impl From<&json::JsonValue> for Rect {
 impl Rect {
     // Check if self contains Point p
     fn contains(&self, p: glm::Vec2) -> bool {
-        p.x >= self.pos.x && p.x < self.pos.x + self.size.w && p.y >= self.pos.y && p.y < self.pos.y + self.size.h
+        p.x >= self.pos.x
+            && p.x < self.pos.x + self.size.w
+            && p.y >= self.pos.y
+            && p.y < self.pos.y + self.size.h
     }
 }
 
@@ -102,9 +105,9 @@ pub struct Level {
 }
 
 impl Level {
-    pub fn from_json_str(json_str: &str) -> Level {
+    pub fn from_json(json: &str) -> Level {
         // TODO: check that no walls/holes/board edges collide
-        let data = json::parse(json_str).unwrap();
+        let data = json::parse(json).unwrap();
         Level {
             name: String::from(data["name"].as_str().unwrap()),
             size: Size::from(&data["size"]),
@@ -114,20 +117,13 @@ impl Level {
             holes: data["holes"].members().map(|j| Point::from(j)).collect(),
         }
     }
-
-    pub fn from_json_file(file_name: &str) -> Level {
-        Level::from_json_str(&std::fs::read_to_string(file_name).unwrap())
-    }
 }
 
 #[derive(Copy, Clone, Debug)]
 pub enum State {
     InProgress,
     Won,
-    Lost {
-        hole: Point,
-        t_lost: Instant,
-    },
+    Lost { hole: Point, t_lost: Instant },
 }
 
 pub struct Game {
@@ -145,7 +141,7 @@ impl Game {
         Game {
             state: State::InProgress,
             ball_pos: lvl.start,
-            ball_v: Velocity { x: 0.0, y: 0.0},
+            ball_v: Velocity { x: 0.0, y: 0.0 },
             angle_x: 0.0,
             angle_y: 0.0,
             prev_update: None,
@@ -168,14 +164,21 @@ impl Game {
         }
 
         let (p, v) = self.detect_collisions(self.do_physics(time));
-        
+
         if self.level.end.contains(p) {
             self.state = State::Won;
         }
 
-        let hole = self.level.holes.iter().find(|h| glm::distance(&p, &glm::Vec2::from(*h)) < HOLE_R);
+        let hole = self
+            .level
+            .holes
+            .iter()
+            .find(|h| glm::distance(&p, &glm::Vec2::from(*h)) < HOLE_R);
         if hole.is_some() {
-            self.state = State::Lost { hole: *hole.unwrap(), t_lost: time };
+            self.state = State::Lost {
+                hole: *hole.unwrap(),
+                t_lost: time,
+            };
         }
 
         self.prev_update = Some(time);
@@ -185,8 +188,11 @@ impl Game {
 
     // Calculate ball (position, velocity) based on current time
     fn do_physics(&self, time: Instant) -> (glm::Vec2, glm::Vec2) {
-        let dt = time.duration_since(self.prev_update.unwrap_or(time)).as_secs_f32();
-        let v = glm::Vec2::from(&self.ball_v) + glm::vec2(self.angle_x, self.angle_y) * ACCEL_COEFF * dt;
+        let dt = time
+            .duration_since(self.prev_update.unwrap_or(time))
+            .as_secs_f32();
+        let v = glm::Vec2::from(&self.ball_v)
+            + glm::vec2(self.angle_x, self.angle_y) * ACCEL_COEFF * dt;
         let p = glm::Vec2::from(&self.ball_pos) + v * dt;
         (p, v)
     }
@@ -194,18 +200,23 @@ impl Game {
     // Detect collisions to walls and update ball (position, velocity) accordingly
     fn detect_collisions(&self, pv: (glm::Vec2, glm::Vec2)) -> (glm::Vec2, glm::Vec2) {
         let pv = apply_collision_response(pv, detect_board_left_edge_collision(pv.0));
-        let pv = apply_collision_response(pv, detect_board_right_edge_collision(pv.0, self.level.size));
+        let pv =
+            apply_collision_response(pv, detect_board_right_edge_collision(pv.0, self.level.size));
         let pv = apply_collision_response(pv, detect_board_top_edge_collision(pv.0));
-        let pv = apply_collision_response(pv, detect_board_bottom_edge_collision(pv.0, self.level.size));
-        return self.level.walls.iter().fold(pv, |pv, w| apply_collision_response(pv, detect_wall_collision(pv.0, *w)));
+        let pv = apply_collision_response(
+            pv,
+            detect_board_bottom_edge_collision(pv.0, self.level.size),
+        );
+        return self.level.walls.iter().fold(pv, |pv, w| {
+            apply_collision_response(pv, detect_wall_collision(pv.0, *w))
+        });
     }
 }
 
 fn detect_board_left_edge_collision(ball_pos: glm::Vec2) -> Option<glm::Vec2> {
     if ball_pos.x < BALL_R {
         Some(glm::vec2(BALL_R - ball_pos.x, 0.0))
-    }
-    else {
+    } else {
         None
     }
 }
@@ -213,8 +224,7 @@ fn detect_board_left_edge_collision(ball_pos: glm::Vec2) -> Option<glm::Vec2> {
 fn detect_board_right_edge_collision(ball_pos: glm::Vec2, board_size: Size) -> Option<glm::Vec2> {
     if ball_pos.x >= board_size.w - BALL_R {
         Some(glm::vec2(board_size.w - BALL_R - ball_pos.x, 0.0))
-    }
-    else {
+    } else {
         None
     }
 }
@@ -222,8 +232,7 @@ fn detect_board_right_edge_collision(ball_pos: glm::Vec2, board_size: Size) -> O
 fn detect_board_top_edge_collision(ball_pos: glm::Vec2) -> Option<glm::Vec2> {
     if ball_pos.y < BALL_R {
         Some(glm::vec2(0.0, BALL_R - ball_pos.y))
-    }
-    else {
+    } else {
         None
     }
 }
@@ -231,8 +240,7 @@ fn detect_board_top_edge_collision(ball_pos: glm::Vec2) -> Option<glm::Vec2> {
 fn detect_board_bottom_edge_collision(ball_pos: glm::Vec2, board_size: Size) -> Option<glm::Vec2> {
     if ball_pos.y >= board_size.h - BALL_R {
         Some(glm::vec2(0.0, board_size.h - BALL_R - ball_pos.y))
-    }
-    else {
+    } else {
         None
     }
 }
@@ -240,17 +248,24 @@ fn detect_board_bottom_edge_collision(ball_pos: glm::Vec2, board_size: Size) -> 
 fn detect_wall_collision(ball_pos: glm::Vec2, wall: Rect) -> Option<glm::Vec2> {
     let wall_half_size = glm::vec2(wall.size.w / 2.0, wall.size.h / 2.0);
     let wall_center = glm::Vec2::from(&wall.pos) + wall_half_size;
-    let closest_point_in_wall = wall_center + glm::clamp_vec(&(ball_pos - wall_center), &(-wall_half_size), &wall_half_size);
+    let closest_point_in_wall = wall_center
+        + glm::clamp_vec(
+            &(ball_pos - wall_center),
+            &(-wall_half_size),
+            &wall_half_size,
+        );
     let distance_to_wall = glm::distance(&ball_pos, &closest_point_in_wall);
     if distance_to_wall < BALL_R {
         Some((BALL_R - distance_to_wall) * glm::normalize(&(ball_pos - closest_point_in_wall)))
-    }
-    else {
+    } else {
         None
     }
 }
 
-fn apply_collision_response(pv: (glm::Vec2, glm::Vec2), resp: Option<glm::Vec2>) -> (glm::Vec2, glm::Vec2) {
+fn apply_collision_response(
+    pv: (glm::Vec2, glm::Vec2),
+    resp: Option<glm::Vec2>,
+) -> (glm::Vec2, glm::Vec2) {
     match resp {
         Some(r) => {
             let dir = glm::normalize(&r);
@@ -259,7 +274,7 @@ fn apply_collision_response(pv: (glm::Vec2, glm::Vec2), resp: Option<glm::Vec2>)
                 // "Damped reflection" around the collision response direction
                 pv.1 - (1.0 + BOUNCE_COEFF) * glm::dot(&pv.1, &dir) * dir,
             )
-        },
+        }
         None => pv,
     }
 }

@@ -283,12 +283,12 @@ impl Instance {
         Scene::new(self.width as f32 / self.height as f32)
     }
 
-    pub fn create_shape(&self, ply_file: &str) -> Shape {
-        Shape::from_ply(self, ply_file)
+    pub fn create_shape(&self, name: &str, ply: &str) -> Shape {
+        Shape::from_ply(self, name, ply)
     }
 
-    pub fn create_texture(&self, image: &Image) -> Texture {
-        Texture::from_image(self, image)
+    pub fn create_texture(&self, name: &str, w: u32, h: u32, rgba_data: &[u8]) -> Texture {
+        Texture::from_image(self, name, w, h, rgba_data)
     }
 
     pub fn create_object(&self, s: &Rc<Shape>, t: &Rc<Texture>) -> Node {
@@ -471,10 +471,11 @@ pub struct Shape {
 }
 
 impl Shape {
-    fn from_ply(inst: &Instance, ply_file: &str) -> Shape {
-        let p = ply_rs::parser::Parser::<ply_rs::ply::DefaultElement>::new();
-        let mut f = std::fs::File::open(ply_file).unwrap();
-        let ply = p.read_ply(&mut f).unwrap();
+    fn from_ply(inst: &Instance, name: &str, ply: &str) -> Shape {
+        let mut bytes = ply.as_bytes();
+        let ply = ply_rs::parser::Parser::<ply_rs::ply::DefaultElement>::new()
+            .read_ply(&mut bytes)
+            .unwrap();
 
         let vertices: Vec<Vertex> = ply.payload["vertex"]
             .iter()
@@ -489,7 +490,7 @@ impl Shape {
             .iter()
             .map(|f| {
                 let vis = as_list_uint(&f["vertex_indices"]);
-                assert!(vis.len() == 3, "{} contains non-triangle faces", ply_file);
+                assert!(vis.len() == 3, "{} contains non-triangle faces", name);
                 vis
             })
             .flatten()
@@ -499,45 +500,18 @@ impl Shape {
             vertex_buffer: inst
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some(&format!("Vertex Buffer {}", ply_file)),
+                    label: Some(&format!("Vertex Buffer {}", name)),
                     contents: bytemuck::cast_slice(&vertices),
                     usage: wgpu::BufferUsage::VERTEX,
                 }),
             index_buffer: inst
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some(&format!("Index Buffer {}", ply_file)),
+                    label: Some(&format!("Index Buffer {}", name)),
                     contents: bytemuck::cast_slice(&indices),
                     usage: wgpu::BufferUsage::INDEX,
                 }),
             index_count: indices.len(),
-        }
-    }
-}
-
-pub struct Image {
-    name: String,
-    data: image::RgbaImage,
-    pub w: u32,
-    pub h: u32,
-}
-
-impl Image {
-    pub fn from_file(image_file: &str) -> Image {
-        let image = image::open(image_file).unwrap().flipv().into_rgba();
-        let w = image.width();
-        let h = image.height();
-        Image {
-            name: String::from(image_file),
-            data: image,
-            w,
-            h,
-        }
-    }
-
-    pub fn pixel(&mut self, u: u32, v: u32) -> PixelRef {
-        PixelRef {
-            data: self.data.get_pixel_mut(u, v),
         }
     }
 }
@@ -547,13 +521,13 @@ pub struct Texture {
 }
 
 impl Texture {
-    fn from_image(inst: &Instance, image: &Image) -> Texture {
+    fn from_image(inst: &Instance, name: &str, w: u32, h: u32, rgba_data: &[u8]) -> Texture {
         // Create the texture, view, sampler, bind group...
         let tex = inst.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(&format!("Texture {}", image.name)),
+            label: Some(&format!("Texture {}", name)),
             size: wgpu::Extent3d {
-                width: image.w,
-                height: image.h,
+                width: w,
+                height: h,
                 depth: 1,
             },
             mip_level_count: inst.config.mipmap_levels,
@@ -564,7 +538,7 @@ impl Texture {
         });
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = inst.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some(&format!("Sampler {}", image.name)),
+            label: Some(&format!("Sampler {}", name)),
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::Repeat,
@@ -574,7 +548,7 @@ impl Texture {
             ..Default::default()
         });
         let bind_group = inst.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some(&format!("Texture bind group {}", image.name)),
+            label: Some(&format!("Texture bind group {}", name)),
             layout: &inst.texture_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -595,25 +569,27 @@ impl Texture {
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
-            &image.data,
+            rgba_data,
             wgpu::TextureDataLayout {
                 offset: 0,
-                bytes_per_row: 4 * image.w,
-                rows_per_image: image.h,
+                bytes_per_row: 4 * w,
+                rows_per_image: h,
             },
             wgpu::Extent3d {
-                width: image.w,
-                height: image.h,
+                width: w,
+                height: h,
                 depth: 1,
             },
         );
 
         // Create mipmaps and upload their data
+        let original: image::ImageBuffer<image::Rgba<u8>, _> =
+            image::ImageBuffer::from_raw(w, h, rgba_data).unwrap();
         for level in 1..inst.config.mipmap_levels {
             let mipmap = image::imageops::resize(
-                &image.data,
-                image.w / 2u32.pow(level),
-                image.h / 2u32.pow(level),
+                &original,
+                w / 2u32.pow(level),
+                h / 2u32.pow(level),
                 image::imageops::FilterType::Triangle,
             );
             inst.queue.write_texture(
@@ -728,28 +704,6 @@ impl<'a> Iterator for SceneIterator<'a> {
                 Some(&n.node)
             }
         }
-    }
-}
-
-pub struct PixelRef<'a> {
-    data: &'a mut image::Rgba<u8>,
-}
-
-impl<'a> PixelRef<'a> {
-    pub fn r(&mut self) -> &mut u8 {
-        &mut self.data[0]
-    }
-
-    pub fn g(&mut self) -> &mut u8 {
-        &mut self.data[1]
-    }
-
-    pub fn b(&mut self) -> &mut u8 {
-        &mut self.data[2]
-    }
-
-    pub fn a(&mut self) -> &mut u8 {
-        &mut self.data[3]
     }
 }
 

@@ -62,34 +62,18 @@ fn main() {
         window.set_cursor_grab(true).expect("Failed to grab cursor");
     }
 
-    // Create a level and set up the scene based on it
-    #[cfg(target_arch = "wasm32")]
-    let level1 = game::Level::from_json_str(include_str!("../level1.json"));
-    #[cfg(not(target_arch = "wasm32"))]
-    let level1 = game::Level::from_json_file("level1.json");
+    let level1 = game::Level::from_json(include_str!("level1.json"));
 
     #[cfg(not(target_arch = "wasm32"))]
     {
         let gfx = futures::executor::block_on(graphics::Instance::new(gfx_cfg, &window, w, h));
-        util::play_level(
-            level1,
-            "level1_markings.png",
-            gfx,
-            event_loop,
-            static_camera,
-        );
+        util::play(level1, gfx, event_loop, static_camera);
     }
     #[cfg(target_arch = "wasm32")]
     {
         wasm_bindgen_futures::spawn_local(async move {
             let gfx = graphics::Instance::new(gfx_cfg, &window, w, h).await;
-            util::play_level(
-                level1,
-                "level1_markings.png",
-                gfx,
-                event_loop,
-                static_camera,
-            );
+            util::play(level1, gfx, event_loop, static_camera);
         });
     }
 }
