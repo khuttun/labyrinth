@@ -1,7 +1,6 @@
 use nalgebra_glm as glm;
 use raw_window_handle::HasRawWindowHandle;
 use std::{iter, rc::Rc};
-use wgpu::util::DeviceExt;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
@@ -21,15 +20,6 @@ struct Uniforms {
 }
 
 impl Uniforms {
-    fn new() -> Uniforms {
-        Uniforms {
-            model_view: [[0.0; 4]; 4],
-            model_view_normal: [[0.0; 4]; 4],
-            projection: [[0.0; 4]; 4],
-            light_pos_cam_space: [0.0; 4],
-        }
-    }
-
     fn from(mv: &glm::Mat4, proj: &glm::Mat4, light: &glm::Vec4) -> Uniforms {
         Uniforms {
             model_view: mv.clone().into(),
@@ -292,13 +282,12 @@ impl Instance {
     }
 
     pub fn create_object(&self, s: &Rc<Shape>, t: &Rc<Texture>) -> Node {
-        let buf = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Uniform buffer"),
-                contents: bytemuck::cast_slice(&[Uniforms::new()]),
-                usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-            });
+        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Uniform buffer"),
+            size: std::mem::size_of::<Uniforms>() as wgpu::BufferAddress,
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            mapped_at_creation: false,
+        });
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Uniform bind group"),
             layout: &self.uniform_bind_group_layout,
@@ -496,21 +485,33 @@ impl Shape {
             .flatten()
             .collect();
 
+        let vertex_buffer = inst.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(&format!("Vertex buffer {}", name)),
+            size: (vertices.len() * std::mem::size_of::<Vertex>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsage::VERTEX,
+            mapped_at_creation: true,
+        });
+        vertex_buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .copy_from_slice(bytemuck::cast_slice(&vertices));
+        vertex_buffer.unmap();
+
+        let index_buffer = inst.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(&format!("Index buffer {}", name)),
+            size: (indices.len() * std::mem::size_of::<u32>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsage::INDEX,
+            mapped_at_creation: true,
+        });
+        index_buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .copy_from_slice(bytemuck::cast_slice(&indices));
+        index_buffer.unmap();
+
         Shape {
-            vertex_buffer: inst
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some(&format!("Vertex Buffer {}", name)),
-                    contents: bytemuck::cast_slice(&vertices),
-                    usage: wgpu::BufferUsage::VERTEX,
-                }),
-            index_buffer: inst
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some(&format!("Index Buffer {}", name)),
-                    contents: bytemuck::cast_slice(&indices),
-                    usage: wgpu::BufferUsage::INDEX,
-                }),
+            vertex_buffer,
+            index_buffer,
             index_count: indices.len(),
         }
     }
