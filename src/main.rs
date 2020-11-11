@@ -36,12 +36,12 @@ fn main() {
 
     println!("Window size {} x {}", w, h);
 
+    // On wasm, append the canvas to the document body
     #[cfg(target_arch = "wasm32")]
     {
         use winit::platform::web::WindowExtWebSys;
         console_log::init().expect("could not initialize logger");
         std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-        // On wasm, append the canvas to the document body
         web_sys::window()
             .and_then(|win| win.document())
             .and_then(|doc| doc.body())
@@ -62,18 +62,16 @@ fn main() {
         window.set_cursor_grab(true).expect("Failed to grab cursor");
     }
 
-    let level1 = game::Level::from_json(include_str!("level1.json"));
-
     #[cfg(not(target_arch = "wasm32"))]
     {
         let gfx = futures::executor::block_on(graphics::Instance::new(gfx_cfg, &window, w, h));
-        util::play(level1, gfx, event_loop, static_camera);
+        util::play(gfx, event_loop, static_camera);
     }
     #[cfg(target_arch = "wasm32")]
     {
         wasm_bindgen_futures::spawn_local(async move {
             let gfx = graphics::Instance::new(gfx_cfg, &window, w, h).await;
-            util::play(level1, gfx, event_loop, static_camera);
+            util::play(gfx, event_loop, static_camera);
         });
     }
 }

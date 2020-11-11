@@ -6,11 +6,11 @@ use std::rc::Rc;
 use std::time::Duration;
 
 pub fn play(
-    level: game::Level,
     gfx: graphics::Instance,
     event_loop: winit::event_loop::EventLoop<()>,
     static_camera: bool,
 ) {
+    let level = game::Level::from_json(include_str!("level1.json"));
     let level_half_w = level.size.w / 2.0;
     let level_half_h = level.size.h / 2.0;
 
