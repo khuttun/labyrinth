@@ -1,7 +1,5 @@
 - Encapsulate the "rotate in world space" operation used for ball rotation inside Node
     - This way the model matrix doen't have to be public
-- The license of the currently used textures doesn't allow open sourcing
-    - https://www.textures.com/faq-license.html#anchor-games
 - Check code against https://github.com/gfx-rs/wgpu/wiki/Do's-and-Dont's
 - Sudden black screen when ball in lower left corner
 - Winning & losing
