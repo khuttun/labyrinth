@@ -1,6 +1,0 @@
-- Check code against https://github.com/gfx-rs/wgpu/wiki/Do's-and-Dont's
-- Sudden black screen when ball in lower left corner
-- Winning & losing
-    - Restart current/start next level?
-    - Texts?
-- Fixed timestep physics?
