@@ -206,21 +206,16 @@ pub fn play(
                 );
 
                 // Ball rotation
-                let axis_ws = glm::normalize(&glm::rotate_vec3(
+                let axis_world_space = glm::normalize(&glm::rotate_vec3(
                     &ball_pos_delta,
                     std::f32::consts::PI / 2.0,
                     &glm::vec3(0.0, 1.0, 0.0),
                 ));
-                let axis = glm::normalize(
-                    &(glm::inverse(&scene.get_node(ball_id).model_matrix)
-                        * glm::vec3_to_vec4(&axis_ws))
-                    .xyz(),
-                );
-                scene.get_node(ball_id).rotate(
+                scene.get_node(ball_id).rotate_in_world_space(
                     glm::length(&ball_pos_delta) / game::BALL_R,
-                    axis.x,
-                    axis.y,
-                    axis.z,
+                    axis_world_space.x,
+                    axis_world_space.y,
+                    axis_world_space.z,
                 );
 
                 // Camera movement

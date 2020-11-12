@@ -1,5 +1,3 @@
-- Encapsulate the "rotate in world space" operation used for ball rotation inside Node
-    - This way the model matrix doen't have to be public
 - Check code against https://github.com/gfx-rs/wgpu/wiki/Do's-and-Dont's
 - Sudden black screen when ball in lower left corner
 - Winning & losing

@@ -632,7 +632,7 @@ pub struct Node {
     scaling: glm::Vec3,
     rotation: glm::Mat4x4,
     translation: glm::Vec3,
-    pub model_matrix: glm::Mat4x4,
+    model_matrix: glm::Mat4x4,
 }
 
 impl Node {
@@ -657,8 +657,11 @@ impl Node {
         self.update_model_matrix();
     }
 
-    pub fn rotate(&mut self, angle: f32, x: f32, y: f32, z: f32) {
-        self.rotation = glm::rotate(&self.rotation, angle, &glm::vec3(x, y, z));
+    pub fn rotate_in_world_space(&mut self, angle: f32, x: f32, y: f32, z: f32) {
+        let axis_model_space =
+            glm::normalize(&(glm::inverse(&self.model_matrix) * glm::vec4(x, y, z, 0.0)).xyz());
+        self.rotation = glm::rotate(&self.rotation, angle, &axis_model_space);
+        self.update_model_matrix();
     }
 
     pub fn set_position(&mut self, x: f32, y: f32, z: f32) {
