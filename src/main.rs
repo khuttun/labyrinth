@@ -40,7 +40,7 @@ fn main() {
     #[cfg(target_arch = "wasm32")]
     {
         use winit::platform::web::WindowExtWebSys;
-        console_log::init().expect("could not initialize logger");
+        console_log::init().expect("Failed to initialize logger");
         std::panic::set_hook(Box::new(console_error_panic_hook::hook));
         web_sys::window()
             .and_then(|win| win.document())
@@ -49,7 +49,7 @@ fn main() {
                 body.append_child(&web_sys::Element::from(window.canvas()))
                     .ok()
             })
-            .expect("couldn't append canvas to document body");
+            .expect("Failed to append canvas to document body");
     }
 
     window.set_cursor_visible(false);

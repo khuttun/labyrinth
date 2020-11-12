@@ -421,10 +421,7 @@ impl Scene {
     }
 
     pub fn add_node(&mut self, node: Node, parent: Option<NodeId>) -> NodeId {
-        self.nodes.push(SceneNode {
-            node: node,
-            parent: parent,
-        });
+        self.nodes.push(SceneNode { node, parent });
         self.nodes.len() - 1
     }
 
@@ -638,7 +635,7 @@ pub struct Node {
 impl Node {
     fn new(kind: NodeKind) -> Node {
         Node {
-            kind: kind,
+            kind,
             scaling: glm::vec3(1.0, 1.0, 1.0),
             rotation: glm::identity(),
             translation: glm::vec3(0.0, 0.0, 0.0),

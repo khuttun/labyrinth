@@ -154,6 +154,7 @@ pub fn play(
             Instant::now() + Duration::from_nanos(16_666_667),
         );
 
+        // 1. Handle events
         match event {
             winit::event::Event::DeviceEvent { event, .. } => match event {
                 winit::event::DeviceEvent::MouseMotion { delta } => {
@@ -194,6 +195,7 @@ pub fn play(
             _ => return,
         }
 
+        // 2. Update game physics
         let p0 = game.ball_pos;
 
         let now = Instant::now();
@@ -201,6 +203,7 @@ pub fn play(
 
         let ball_pos_delta = glm::vec3(game.ball_pos.x - p0.x, 0.0, game.ball_pos.y - p0.y);
 
+        // 3. Update scene
         match game.state {
             game::State::InProgress => {
                 // Ball position
@@ -252,6 +255,7 @@ pub fn play(
             _ => (),
         }
 
+        // 4. Render
         gfx.render_scene(&scene);
     });
 }
