@@ -87,7 +87,12 @@ pub fn play(
 
     // Board surface
     let mut board_surface = gfx.create_object(&quad, &board_tex);
-    board_surface.set_scaling(level.size.w, 1.0, level.size.h);
+    // extend board surface very slightly below board edge walls so that the background doesn't leak through from the seam
+    board_surface.set_scaling(
+        level.size.w + BOARD_WALL_W / 100.0,
+        1.0,
+        level.size.h + BOARD_WALL_W / 100.0,
+    );
     scene.add_node(board_surface, Some(board_id));
 
     // Board markings
