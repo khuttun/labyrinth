@@ -155,29 +155,22 @@ pub fn play(
     let mut stats_frames = 0;
 
     event_loop.run(move |event, _, control_flow| {
-        // Wake up after a deadline if no other events are received
-        *control_flow = winit::event_loop::ControlFlow::WaitUntil(
-            Instant::now() + Duration::from_nanos(16_666_667),
-        );
-
-        // 1. Handle events
+        // Use ControlFlow::Poll to wake up event loop immediately again after each iteration.
+        // The render code in graphics module will block appropriately so that frames are created at most at
+        // the monitor refresh rate.
+        *control_flow = winit::event_loop::ControlFlow::Poll;
         match event {
             winit::event::Event::DeviceEvent { event, .. } => match event {
                 winit::event::DeviceEvent::MouseMotion { delta } => {
                     const ROTATE_COEFF: f32 = 0.0002;
                     game.rotate_x(ROTATE_COEFF * delta.0 as f32);
                     game.rotate_y(ROTATE_COEFF * delta.1 as f32);
-                    scene
-                        .get_node(board_id)
-                        .set_rotation(game.angle_y, 0.0, -game.angle_x);
-                    // -> proceed to update game state and draw
                 }
-                _ => return,
+                _ => (),
             },
             winit::event::Event::WindowEvent { event, .. } => match event {
                 winit::event::WindowEvent::CloseRequested => {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
-                    return;
                 }
                 winit::event::WindowEvent::KeyboardInput {
                     input:
@@ -189,92 +182,88 @@ pub fn play(
                     ..
                 } => {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
-                    return;
                 }
-                _ => return,
+                _ => (),
             },
-            winit::event::Event::NewEvents(cause) => match cause {
-                // woke up after deadline -> proceed to update game state and draw
-                winit::event::StartCause::ResumeTimeReached { .. } => (),
-                _ => return,
-            },
-            _ => return,
-        }
+            winit::event::Event::MainEventsCleared => {
+                // Update game state
+                let p0 = game.ball_pos;
+                let now = Instant::now();
+                game.update(now);
+                let ball_pos_delta = glm::vec3(game.ball_pos.x - p0.x, 0.0, game.ball_pos.y - p0.y);
 
-        // 2. Update game physics
-        let p0 = game.ball_pos;
+                // Update scene
+                scene
+                    .get_node(board_id)
+                    .set_rotation(game.angle_y, 0.0, -game.angle_x);
+                match game.state {
+                    game::State::InProgress => {
+                        // Ball position
+                        scene.get_node(ball_id).set_position(
+                            game.ball_pos.x - level_half_w,
+                            game::BALL_R,
+                            game.ball_pos.y - level_half_h,
+                        );
 
-        let now = Instant::now();
-        game.update(now);
+                        // Ball rotation
+                        let axis_world_space = glm::normalize(&glm::rotate_vec3(
+                            &ball_pos_delta,
+                            std::f32::consts::PI / 2.0,
+                            &glm::vec3(0.0, 1.0, 0.0),
+                        ));
+                        scene.get_node(ball_id).rotate_in_world_space(
+                            glm::length(&ball_pos_delta) / game::BALL_R,
+                            axis_world_space.x,
+                            axis_world_space.y,
+                            axis_world_space.z,
+                        );
 
-        let ball_pos_delta = glm::vec3(game.ball_pos.x - p0.x, 0.0, game.ball_pos.y - p0.y);
-
-        // 3. Update scene
-        match game.state {
-            game::State::InProgress => {
-                // Ball position
-                scene.get_node(ball_id).set_position(
-                    game.ball_pos.x - level_half_w,
-                    game::BALL_R,
-                    game.ball_pos.y - level_half_h,
-                );
-
-                // Ball rotation
-                let axis_world_space = glm::normalize(&glm::rotate_vec3(
-                    &ball_pos_delta,
-                    std::f32::consts::PI / 2.0,
-                    &glm::vec3(0.0, 1.0, 0.0),
-                ));
-                scene.get_node(ball_id).rotate_in_world_space(
-                    glm::length(&ball_pos_delta) / game::BALL_R,
-                    axis_world_space.x,
-                    axis_world_space.y,
-                    axis_world_space.z,
-                );
-
-                // Camera movement
-                if !static_camera {
-                    scene.look_at(
-                        game.ball_pos.x - level_half_w,
-                        40.0 * game::BALL_R,
-                        game.ball_pos.y - level_half_h + 10.0 * game::BALL_R,
-                        game.ball_pos.x - level_half_w,
-                        0.0,
-                        game.ball_pos.y - level_half_h,
-                    );
-                }
-            }
-            game::State::Lost { hole, t_lost } => {
-                match animate_ball_falling_in_hole(
-                    now.duration_since(t_lost).as_secs_f32(),
-                    game.ball_pos,
-                    hole,
-                ) {
-                    Some((x, y, z)) => {
-                        scene
-                            .get_node(ball_id)
-                            .set_position(x - level_half_w, z, y - level_half_h)
+                        // Camera movement
+                        if !static_camera {
+                            scene.look_at(
+                                game.ball_pos.x - level_half_w,
+                                40.0 * game::BALL_R,
+                                game.ball_pos.y - level_half_h + 10.0 * game::BALL_R,
+                                game.ball_pos.x - level_half_w,
+                                0.0,
+                                game.ball_pos.y - level_half_h,
+                            );
+                        }
                     }
-                    None => scene.get_node(ball_id).set_scaling(0.0, 0.0, 0.0),
+                    game::State::Lost { hole, t_lost } => {
+                        match animate_ball_falling_in_hole(
+                            now.duration_since(t_lost).as_secs_f32(),
+                            game.ball_pos,
+                            hole,
+                        ) {
+                            Some((x, y, z)) => scene.get_node(ball_id).set_position(
+                                x - level_half_w,
+                                z,
+                                y - level_half_h,
+                            ),
+                            None => scene.get_node(ball_id).set_scaling(0.0, 0.0, 0.0),
+                        }
+                    }
+                    _ => (),
+                }
+
+                // Render
+                gfx.render_scene(&scene);
+
+                // Statistics
+                if stats {
+                    stats_frames = stats_frames + 1;
+                    let now = Instant::now();
+                    let elapsed = now.duration_since(stats_t);
+                    if elapsed >= STATS_INTERVAL {
+                        let fps = stats_frames as f64 / elapsed.as_secs_f64();
+                        println!("FPS {}", fps);
+                        stats_t = now;
+                        stats_frames = 0;
+                    }
                 }
             }
             _ => (),
-        }
-
-        // 4. Render
-        gfx.render_scene(&scene);
-
-        // 5. Statistics
-        if stats {
-            stats_frames = stats_frames + 1;
-            let now = Instant::now();
-            let elapsed = now.duration_since(stats_t);
-            if elapsed >= STATS_INTERVAL {
-                let fps = stats_frames as f64 / elapsed.as_secs_f64();
-                println!("FPS {}", fps);
-                stats_t = now;
-                stats_frames = 0;
-            }
         }
     });
 }
