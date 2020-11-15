@@ -10,7 +10,8 @@ fn main() {
             "-f                    'Sets fullscreen mode'
             -s                    'Sets static camera'
             -t                    'Enables statistics output'
-            -m, --mipmap=[LEVELS] 'Sets the number of texture mipmap levels to use'",
+            -m, --mipmap=[LEVELS] 'Sets the number of texture mipmap levels to use'
+            -n, --no-vsync        'Disables VSync for unlimited FPS'",
         )
         .get_matches();
 
@@ -21,6 +22,10 @@ fn main() {
     let mut gfx_cfg = graphics::Config::new();
     if let Some(val) = args.value_of("mipmap") {
         gfx_cfg.mipmap_levels = u32::from_str(val).expect("Invalid mipmap levels option");
+    }
+
+    if args.is_present("no-vsync") {
+        gfx_cfg.vsync = false;
     }
 
     let event_loop = winit::event_loop::EventLoop::new();

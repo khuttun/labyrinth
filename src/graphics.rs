@@ -34,6 +34,7 @@ impl Uniforms {
 pub struct Config {
     pub msaa_samples: u32,
     pub mipmap_levels: u32,
+    pub vsync: bool,
 }
 
 impl Config {
@@ -41,6 +42,7 @@ impl Config {
         Config {
             msaa_samples: 4,
             mipmap_levels: 6,
+            vsync: true,
         }
     }
 }
@@ -93,7 +95,11 @@ impl Instance {
             format: wgpu::TextureFormat::Bgra8Unorm,
             width,
             height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: if config.vsync {
+                wgpu::PresentMode::Fifo
+            } else {
+                wgpu::PresentMode::Immediate
+            },
         };
 
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
