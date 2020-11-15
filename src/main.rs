@@ -9,12 +9,14 @@ fn main() {
         .args_from_usage(
             "-f                    'Sets fullscreen mode'
             -s                    'Sets static camera'
+            -t                    'Enables statistics output'
             -m, --mipmap=[LEVELS] 'Sets the number of texture mipmap levels to use'",
         )
         .get_matches();
 
     let fullscreen = args.is_present("f");
     let static_camera = args.is_present("s");
+    let stats = args.is_present("t");
 
     let mut gfx_cfg = graphics::Config::new();
     if let Some(val) = args.value_of("mipmap") {
@@ -65,13 +67,13 @@ fn main() {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let gfx = futures::executor::block_on(graphics::Instance::new(gfx_cfg, &window, w, h));
-        util::play(gfx, event_loop, static_camera);
+        util::play(gfx, event_loop, static_camera, stats);
     }
     #[cfg(target_arch = "wasm32")]
     {
         wasm_bindgen_futures::spawn_local(async move {
             let gfx = graphics::Instance::new(gfx_cfg, &window, w, h).await;
-            util::play(gfx, event_loop, static_camera);
+            util::play(gfx, event_loop, static_camera, stats);
         });
     }
 }

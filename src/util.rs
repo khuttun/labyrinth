@@ -9,6 +9,7 @@ pub fn play(
     gfx: graphics::Instance,
     event_loop: winit::event_loop::EventLoop<()>,
     static_camera: bool,
+    stats: bool,
 ) {
     let level = game::Level::from_json(include_str!("level1.json"));
     let level_half_w = level.size.w / 2.0;
@@ -148,6 +149,11 @@ pub fn play(
     // Create a new game from the level and enter the main event loop
     let mut game = game::Game::new(level);
 
+    // Statistics
+    const STATS_INTERVAL: Duration = Duration::from_secs(5);
+    let mut stats_t = Instant::now();
+    let mut stats_frames = 0;
+
     event_loop.run(move |event, _, control_flow| {
         // Wake up after a deadline if no other events are received
         *control_flow = winit::event_loop::ControlFlow::WaitUntil(
@@ -257,6 +263,19 @@ pub fn play(
 
         // 4. Render
         gfx.render_scene(&scene);
+
+        // 5. Statistics
+        if stats {
+            stats_frames = stats_frames + 1;
+            let now = Instant::now();
+            let elapsed = now.duration_since(stats_t);
+            if elapsed >= STATS_INTERVAL {
+                let fps = stats_frames as f64 / elapsed.as_secs_f64();
+                println!("FPS {}", fps);
+                stats_t = now;
+                stats_frames = 0;
+            }
+        }
     });
 }
 
