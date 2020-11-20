@@ -93,8 +93,9 @@ impl Rect {
     }
 }
 
-// Level coordinate system origin is in top-left corner of the board.
-// Positive x-axis direction is right and positive y-axis direction down.
+/// Holds the information about single Labyrinth level.
+/// Level coordinate system origin is in top-left corner of the board.
+/// Positive x-axis direction is right and positive y-axis direction down.
 pub struct Level {
     pub name: String,
     pub size: Size,
@@ -125,6 +126,10 @@ pub enum State {
     Lost { hole: Point, t_lost: Instant },
 }
 
+/// Maintains the state of a single game of Labyrinth. A Game always starts with the ball in the
+/// start position defined by the Level instance associated with the Game, and ends when the
+/// ball either falls in a hole or reaches the goal area of the Level. The Game instance needs
+/// to be periodically updated to advance the simulation.
 pub struct Game {
     pub state: State,
     pub ball_pos: Point,
