@@ -34,7 +34,7 @@ pub fn play(
     punch_holes(&mut board_img, &level);
     let board_tex =
         Rc::new(gfx.create_texture("board", board_img.width(), board_img.height(), &board_img));
-    println!("Creating board markings texture...");
+    println!("Loading board markings texture...");
     let board_markings_img = create_image(
         include_bytes!("level1_markings.png"),
         image::ImageFormat::Png,
@@ -146,7 +146,7 @@ pub fn play(
         0.0,
     );
 
-    // Create a new game from the level and enter the main event loop
+    // Create a new game from the level
     let mut game = game::Game::new(level);
 
     // Statistics
@@ -154,6 +154,7 @@ pub fn play(
     let mut stats_t = Instant::now();
     let mut stats_frames = 0;
 
+    // Enter the main loop
     event_loop.run(move |event, _, control_flow| {
         // Use ControlFlow::Poll to wake up event loop immediately again after each iteration.
         // The render code in graphics module will block appropriately so that frames are created at most at
