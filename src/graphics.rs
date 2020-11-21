@@ -175,7 +175,6 @@ impl Instance {
                 ],
             });
 
-        // Shaders compiled with `glslangValidator -V -o <output> -e main <input>`
         let vs_module = device.create_shader_module(wgpu::include_spirv!("default.vert.spv"));
         let fs_module = device.create_shader_module(wgpu::include_spirv!("default.frag.spv"));
 

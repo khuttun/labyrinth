@@ -6,7 +6,16 @@ Labyrinth is a virtual version of [the classic labyrinth marble game](https://en
 
 ## Build
 
-Just [install the latest version of Rust](https://www.rust-lang.org/tools/install) and do
+First, compile the shaders by installing [glslangValidator](https://www.khronos.org/opengles/sdk/tools/Reference-Compiler/), and running
+
+```
+glslangValidator -V -o src/default.frag.spv -e main src/default.frag
+glslangValidator -V -o src/default.vert.spv -e main src/default.vert
+```
+
+in the project main directory.
+
+Then, [install Rust](https://www.rust-lang.org/tools/install), and do
 
 ```
 cargo build --release
@@ -22,7 +31,7 @@ Implements the core game logic and physics. Takes no stance on how the game is p
 
 ### `graphics`
 
-Implements a scene graph based 3D graphics engine using the [wgpu-rs](https://github.com/gfx-rs/wgpu-rs) library. Not specific to Labyrinth, but could in principle be used for other purposes also.
+Implements a scene graph based 3D graphics engine using the [wgpu-rs](https://github.com/gfx-rs/wgpu-rs) library. Not specific to Labyrinth, could in principle be used for other purposes also.
 
 ### `util`
 
