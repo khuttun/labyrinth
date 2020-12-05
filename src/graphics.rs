@@ -81,6 +81,7 @@ impl Instance {
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
+                    label: None,
                     features: wgpu::Features::empty(),
                     limits: wgpu::Limits::default(),
                     shader_validation: true,
@@ -91,7 +92,7 @@ impl Instance {
             .unwrap();
 
         let sc_desc = wgpu::SwapChainDescriptor {
-            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+            usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
             format: wgpu::TextureFormat::Bgra8Unorm,
             width,
             height,
@@ -116,7 +117,7 @@ impl Instance {
                 sample_count: config.msaa_samples,
                 dimension: wgpu::TextureDimension::D2,
                 format: sc_desc.format,
-                usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+                usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
             })
             .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -131,7 +132,7 @@ impl Instance {
             sample_count: config.msaa_samples,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+            usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
         };
 
         let depth_texture_view = device
@@ -144,8 +145,9 @@ impl Instance {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::UniformBuffer {
-                        dynamic: false,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
@@ -159,17 +161,20 @@ impl Instance {
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::SampledTexture {
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
                             multisampled: false,
-                            dimension: wgpu::TextureViewDimension::D2,
-                            component_type: wgpu::TextureComponentType::Float,
+                            view_dimension: wgpu::TextureViewDimension::D2,
                         },
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler { comparison: false },
+                        ty: wgpu::BindingType::Sampler {
+                            filtering: true,
+                            comparison: false,
+                        },
                         count: None,
                     },
                 ],
@@ -228,7 +233,7 @@ impl Instance {
                 stencil: wgpu::StencilStateDescriptor::default(),
             }),
             vertex_state: wgpu::VertexStateDescriptor {
-                index_format: wgpu::IndexFormat::Uint32,
+                index_format: Some(wgpu::IndexFormat::Uint32),
                 vertex_buffers: &[wgpu::VertexBufferDescriptor {
                     stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
                     step_mode: wgpu::InputStepMode::Vertex,
@@ -387,7 +392,10 @@ impl Instance {
                         render_pass.set_bind_group(0, &uniform_bind_group, &[]);
                         render_pass.set_bind_group(1, &texture.bind_group, &[]);
                         render_pass.set_vertex_buffer(0, shape.vertex_buffer.slice(..));
-                        render_pass.set_index_buffer(shape.index_buffer.slice(..));
+                        render_pass.set_index_buffer(
+                            shape.index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
                         render_pass.draw_indexed(0..shape.index_count as u32, 0, 0..1);
                     }
                     NodeKind::Transformation => (), // nothing to draw

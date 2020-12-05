@@ -16,10 +16,10 @@ nalgebra-glm = "0.8.0"
 ply-rs = "0.1.3"
 raw-window-handle = "0.3.3"
 winit = { version = "0.23.0", features = ["web-sys"] }
-wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", rev = "86757f4" }
+wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", rev = "f276e2c" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"
 console_log = "0.2.0"
-wasm-bindgen-futures = "0.4.18"
-web-sys = "0.3.45"
+wasm-bindgen-futures = "0.4.19"
+web-sys = "0.3.46"
