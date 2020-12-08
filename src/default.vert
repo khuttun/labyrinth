@@ -8,12 +8,16 @@ layout(location=0) out vec3 fragPosCamSpace;
 layout(location=1) out vec3 fragNormalCamSpace;
 layout(location=2) out vec2 fragTexCoords;
 
-layout(set=0, binding=0) 
-uniform Uniforms {
-    mat4 modelView;
-    mat4 normalModelView;
+layout(set=0, binding=0)
+uniform SceneUniforms {
     mat4 projection;
     vec4 lightPosCamSpace;
+};
+
+layout(set=1, binding=0)
+uniform ObjectUniforms {
+    mat4 modelView;
+    mat4 normalModelView;
 };
 
 void main()

@@ -2,6 +2,7 @@ use nalgebra_glm as glm;
 use raw_window_handle::HasRawWindowHandle;
 use std::{iter, rc::Rc};
 
+// Data for one vertex
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
 struct Vertex {
@@ -10,22 +11,36 @@ struct Vertex {
     tex_coords: [f32; 2],
 }
 
+// Uniforms related to the whole scene
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
-struct Uniforms {
-    model_view: [[f32; 4]; 4],
-    model_view_normal: [[f32; 4]; 4],
+struct SceneUniforms {
     projection: [[f32; 4]; 4],
     light_pos_cam_space: [f32; 4], // Only xyz components used. The vector is 4D to satisfy GLSL uniform alignment requirements.
 }
 
-impl Uniforms {
-    fn from(mv: &glm::Mat4, proj: &glm::Mat4, light: &glm::Vec4) -> Uniforms {
-        Uniforms {
-            model_view: mv.clone().into(),
-            model_view_normal: glm::transpose(&glm::inverse(mv)).into(),
+impl SceneUniforms {
+    fn from(proj: &glm::Mat4, light: &glm::Vec4) -> SceneUniforms {
+        SceneUniforms {
             projection: proj.clone().into(),
             light_pos_cam_space: light.clone().into(),
+        }
+    }
+}
+
+// Uniforms related to one scene object
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
+struct ObjectUniforms {
+    model_view: [[f32; 4]; 4],
+    model_view_normal: [[f32; 4]; 4],
+}
+
+impl ObjectUniforms {
+    fn from(mv: &glm::Mat4) -> ObjectUniforms {
+        ObjectUniforms {
+            model_view: mv.clone().into(),
+            model_view_normal: glm::transpose(&glm::inverse(mv)).into(),
         }
     }
 }
@@ -56,7 +71,8 @@ pub struct Instance {
     swap_chain: wgpu::SwapChain,
     multisampled_fb_texture_view: wgpu::TextureView,
     depth_texture_view: wgpu::TextureView,
-    uniform_bind_group_layout: wgpu::BindGroupLayout,
+    scene_uniform_bind_group_layout: wgpu::BindGroupLayout,
+    object_uniform_bind_group_layout: wgpu::BindGroupLayout,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     render_pipeline: wgpu::RenderPipeline,
 }
@@ -139,12 +155,27 @@ impl Instance {
             .create_texture(&depth_texture_desc)
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let uniform_bind_group_layout =
+        let scene_uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Uniform bind group layout"),
+                label: Some("Scene uniform bind group layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let object_uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Object uniform bind group layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -186,7 +217,11 @@ impl Instance {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render pipeline layout"),
-                bind_group_layouts: &[&uniform_bind_group_layout, &texture_bind_group_layout],
+                bind_group_layouts: &[
+                    &scene_uniform_bind_group_layout,
+                    &object_uniform_bind_group_layout,
+                    &texture_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -273,14 +308,15 @@ impl Instance {
             swap_chain,
             multisampled_fb_texture_view,
             depth_texture_view,
-            uniform_bind_group_layout,
+            scene_uniform_bind_group_layout,
+            object_uniform_bind_group_layout,
             texture_bind_group_layout,
             render_pipeline,
         }
     }
 
     pub fn create_scene(&self) -> Scene {
-        Scene::new(self.width as f32 / self.height as f32)
+        Scene::new(self)
     }
 
     pub fn create_shape(&self, name: &str, ply: &str) -> Shape {
@@ -293,14 +329,14 @@ impl Instance {
 
     pub fn create_object(&self, s: &Rc<Shape>, t: &Rc<Texture>) -> Node {
         let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Uniform buffer"),
-            size: std::mem::size_of::<Uniforms>() as wgpu::BufferAddress,
+            label: Some("Object uniform buffer"),
+            size: std::mem::size_of::<ObjectUniforms>() as wgpu::BufferAddress,
             usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
             mapped_at_creation: false,
         });
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Uniform bind group"),
-            layout: &self.uniform_bind_group_layout,
+            label: Some("Object uniform bind group"),
+            layout: &self.object_uniform_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: buf.as_entire_binding(),
@@ -319,8 +355,16 @@ impl Instance {
     }
 
     pub fn render_scene(&self, scene: &Scene) {
-        // 1. update uniforms
+        // 1. Update uniforms
         let light_pos_cam_space = scene.view_matrix * scene.light_position;
+        self.queue.write_buffer(
+            &scene.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[SceneUniforms::from(
+                &scene.perspective_matrix,
+                &light_pos_cam_space,
+            )]),
+        );
         for (id, n) in scene.nodes.iter().enumerate() {
             match &n.node.kind {
                 NodeKind::Object {
@@ -335,11 +379,7 @@ impl Instance {
                     self.queue.write_buffer(
                         &uniform_buffer,
                         0,
-                        bytemuck::cast_slice(&[Uniforms::from(
-                            &model_view,
-                            &scene.perspective_matrix,
-                            &light_pos_cam_space,
-                        )]),
+                        bytemuck::cast_slice(&[ObjectUniforms::from(&model_view)]),
                     );
                 }
                 NodeKind::Transformation => (), // no uniforms to update
@@ -381,6 +421,7 @@ impl Instance {
 
             render_pass.set_pipeline(&self.render_pipeline);
 
+            render_pass.set_bind_group(0, &scene.uniform_bind_group, &[]);
             for n in scene.nodes.iter() {
                 match &n.node.kind {
                     NodeKind::Object {
@@ -389,8 +430,8 @@ impl Instance {
                         uniform_buffer: _,
                         uniform_bind_group,
                     } => {
-                        render_pass.set_bind_group(0, &uniform_bind_group, &[]);
-                        render_pass.set_bind_group(1, &texture.bind_group, &[]);
+                        render_pass.set_bind_group(1, &uniform_bind_group, &[]);
+                        render_pass.set_bind_group(2, &texture.bind_group, &[]);
                         render_pass.set_vertex_buffer(0, shape.vertex_buffer.slice(..));
                         render_pass.set_index_buffer(
                             shape.index_buffer.slice(..),
@@ -412,10 +453,26 @@ pub struct Scene {
     view_matrix: glm::Mat4x4,
     perspective_matrix: glm::Mat4x4,
     light_position: glm::Vec4,
+    uniform_buffer: wgpu::Buffer,
+    uniform_bind_group: wgpu::BindGroup,
 }
 
 impl Scene {
-    fn new(aspect: f32) -> Scene {
+    fn new(inst: &Instance) -> Scene {
+        let uniform_buffer = inst.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Scene uniform buffer"),
+            size: std::mem::size_of::<SceneUniforms>() as wgpu::BufferAddress,
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let uniform_bind_group = inst.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Scene uniform bind group"),
+            layout: &inst.scene_uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        });
         Scene {
             nodes: Vec::new(),
             view_matrix: glm::look_at(
@@ -424,12 +481,14 @@ impl Scene {
                 &glm::vec3(0.0, 1.0, 0.0),
             ),
             perspective_matrix: glm::perspective(
-                aspect,
+                inst.width as f32 / inst.height as f32,
                 glm::radians(&glm::vec1(45.0)).x,
                 2.0,
                 2000.0,
             ),
             light_position: glm::vec4(0.0, 5.0, 0.0, 1.0),
+            uniform_buffer,
+            uniform_bind_group,
         }
     }
 

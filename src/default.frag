@@ -7,15 +7,13 @@ layout(location=2) in vec2 fragTexCoords;
 layout(location=0) out vec4 outputColor;
 
 layout(set=0, binding=0) 
-uniform Uniforms {
-    mat4 modelView;
-    mat4 normalModelView;
+uniform SceneUniforms {
     mat4 projection;
     vec4 lightPosCamSpace;
 };
 
-layout(set=1, binding=0) uniform texture2D txtr;
-layout(set=1, binding=1) uniform sampler smplr;
+layout(set=2, binding=0) uniform texture2D txtr;
+layout(set=2, binding=1) uniform sampler smplr;
 
 void main()
 {
