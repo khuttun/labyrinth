@@ -11,10 +11,11 @@ layout(location=2) out vec2 fragTexCoords;
 layout(set=0, binding=0)
 uniform SceneUniforms {
     mat4 viewProjection;
+    mat4 lightProjection;
     vec4 lightPosWorldSpace;
 };
 
-layout(set=1, binding=0)
+layout(set=2, binding=0)
 uniform ObjectUniforms {
     mat4 model;
     mat4 normalModel;

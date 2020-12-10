@@ -133,8 +133,15 @@ pub fn play(
         scene.add_node(obj, Some(board_id));
     }
 
-    // Set light directly above the board
-    scene.set_light_position(0.0, level_half_w.max(level_half_h), 0.0);
+    // Set light position
+    scene.set_light(
+        level_half_w,
+        1.2 * level.size.w.max(level.size.h),
+        level_half_h,
+        0.0,
+        0.0,
+        0.0,
+    );
 
     // Set initial camera position
     scene.look_at(

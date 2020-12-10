@@ -11,6 +11,7 @@ First, compile the shaders by installing [glslangValidator](https://www.khronos.
 ```
 glslangValidator -V -o src/default.frag.spv -e main src/default.frag
 glslangValidator -V -o src/default.vert.spv -e main src/default.vert
+glslangValidator -V -o src/shadow.vert.spv -e main src/shadow.vert
 ```
 
 in the project main directory.

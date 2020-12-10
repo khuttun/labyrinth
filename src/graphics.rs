@@ -11,19 +11,54 @@ struct Vertex {
     tex_coords: [f32; 2],
 }
 
+impl Vertex {
+    fn buffer_descriptor<'a>() -> wgpu::VertexBufferDescriptor<'a> {
+        wgpu::VertexBufferDescriptor {
+            stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::InputStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttributeDescriptor {
+                    // position
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float3,
+                },
+                wgpu::VertexAttributeDescriptor {
+                    // normal
+                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float3,
+                },
+                wgpu::VertexAttributeDescriptor {
+                    // tex_coords
+                    offset: 2 * std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float2,
+                },
+            ],
+        }
+    }
+
+    fn index_format() -> wgpu::IndexFormat {
+        wgpu::IndexFormat::Uint32
+    }
+}
+
 // Uniforms related to the whole scene
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
 struct SceneUniforms {
     view_projection: [[f32; 4]; 4],
+    light_projection: [[f32; 4]; 4],
     light_pos_world_space: [f32; 4], // Only xyz components used. The vector is 4D to satisfy GLSL uniform alignment requirements.
 }
 
 impl SceneUniforms {
-    fn from(vp: &glm::Mat4, light: &glm::Vec4) -> SceneUniforms {
+    fn from(vp: &glm::Mat4, lp: &glm::Mat4, light: &glm::Vec3) -> SceneUniforms {
         SceneUniforms {
             view_projection: vp.clone().into(),
-            light_pos_world_space: light.clone().into(),
+            light_projection: lp.clone().into(),
+            light_pos_world_space: glm::vec3_to_vec4(light).into(),
         }
     }
 }
@@ -71,10 +106,13 @@ pub struct Instance {
     swap_chain: wgpu::SwapChain,
     multisampled_fb_texture_view: wgpu::TextureView,
     depth_texture_view: wgpu::TextureView,
+    shadow_texture_view: wgpu::TextureView,
+    shadow_bind_group: wgpu::BindGroup,
     scene_uniform_bind_group_layout: wgpu::BindGroupLayout,
     object_uniform_bind_group_layout: wgpu::BindGroupLayout,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     render_pipeline: wgpu::RenderPipeline,
+    shadow_pipeline: wgpu::RenderPipeline,
 }
 
 impl Instance {
@@ -155,6 +193,77 @@ impl Instance {
             .create_texture(&depth_texture_desc)
             .create_view(&wgpu::TextureViewDescriptor::default());
 
+        let shadow_texture_desc = wgpu::TextureDescriptor {
+            label: Some("Shadow texture"),
+            size: wgpu::Extent3d {
+                width: width.min(height),
+                height: width.min(height),
+                depth: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+        };
+
+        let shadow_texture_view = device
+            .create_texture(&shadow_texture_desc)
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Shadow sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+
+        let shadow_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Shadow bind group layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Depth,
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler {
+                            filtering: false,
+                            comparison: true,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let shadow_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Shadow bind group"),
+            layout: &shadow_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&shadow_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&shadow_sampler),
+                },
+            ],
+        });
+
         let scene_uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Scene uniform bind group layout"),
@@ -219,6 +328,7 @@ impl Instance {
                 label: Some("Render pipeline layout"),
                 bind_group_layouts: &[
                     &scene_uniform_bind_group_layout,
+                    &shadow_bind_group_layout,
                     &object_uniform_bind_group_layout,
                     &texture_bind_group_layout,
                 ],
@@ -268,33 +378,56 @@ impl Instance {
                 stencil: wgpu::StencilStateDescriptor::default(),
             }),
             vertex_state: wgpu::VertexStateDescriptor {
-                index_format: Some(wgpu::IndexFormat::Uint32),
-                vertex_buffers: &[wgpu::VertexBufferDescriptor {
-                    stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-                    step_mode: wgpu::InputStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttributeDescriptor {
-                            // position
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float3,
-                        },
-                        wgpu::VertexAttributeDescriptor {
-                            // normal
-                            offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                            shader_location: 1,
-                            format: wgpu::VertexFormat::Float3,
-                        },
-                        wgpu::VertexAttributeDescriptor {
-                            // tex_coords
-                            offset: 2 * std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Float2,
-                        },
-                    ],
-                }],
+                index_format: Some(Vertex::index_format()),
+                vertex_buffers: &[Vertex::buffer_descriptor()],
             },
             sample_count: config.msaa_samples,
+            sample_mask: !0,
+            alpha_to_coverage_enabled: false,
+        });
+
+        let shadow_vs_module = device.create_shader_module(wgpu::include_spirv!("shadow.vert.spv"));
+
+        let shadow_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Shadow pipeline layout"),
+                bind_group_layouts: &[
+                    &scene_uniform_bind_group_layout,
+                    &object_uniform_bind_group_layout,
+                ],
+                push_constant_ranges: &[],
+            });
+
+        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Shadow pipeline"),
+            layout: Some(&shadow_pipeline_layout),
+            vertex_stage: wgpu::ProgrammableStageDescriptor {
+                module: &shadow_vs_module,
+                entry_point: "main",
+            },
+            fragment_stage: None,
+            rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: wgpu::CullMode::Back,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                depth_bias: 2,
+                depth_bias_slope_scale: 2.0,
+                depth_bias_clamp: 0.0,
+                clamp_depth: false,
+            }),
+            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+            color_states: &[],
+            depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
+                format: shadow_texture_desc.format,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilStateDescriptor::default(),
+            }),
+            vertex_state: wgpu::VertexStateDescriptor {
+                index_format: Some(Vertex::index_format()),
+                vertex_buffers: &[Vertex::buffer_descriptor()],
+            },
+            sample_count: 1,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
         });
@@ -308,10 +441,13 @@ impl Instance {
             swap_chain,
             multisampled_fb_texture_view,
             depth_texture_view,
+            shadow_texture_view,
+            shadow_bind_group,
             scene_uniform_bind_group_layout,
             object_uniform_bind_group_layout,
             texture_bind_group_layout,
             render_pipeline,
+            shadow_pipeline,
         }
     }
 
@@ -355,12 +491,24 @@ impl Instance {
     }
 
     pub fn render_scene(&self, scene: &Scene) {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render encoder"),
+            });
+
         // 1. Update uniforms
         self.queue.write_buffer(
             &scene.uniform_buffer,
             0,
             bytemuck::cast_slice(&[SceneUniforms::from(
                 &(scene.perspective_matrix * scene.view_matrix),
+                &(scene.light_projection_matrix
+                    * glm::look_at(
+                        &scene.light_position,
+                        &scene.light_point_at,
+                        &glm::vec3(0.0, 1.0, 0.0),
+                    )),
                 &scene.light_position,
             )]),
         );
@@ -384,18 +532,48 @@ impl Instance {
             }
         }
 
-        // 2. Draw
+        // 2. Create shadow map
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                    attachment: &self.shadow_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true,
+                    }),
+                    stencil_ops: None,
+                }),
+            });
+
+            render_pass.set_pipeline(&self.shadow_pipeline);
+            render_pass.set_bind_group(0, &scene.uniform_bind_group, &[]);
+
+            for n in scene.nodes.iter() {
+                match &n.node.kind {
+                    NodeKind::Object {
+                        shape,
+                        texture: _,
+                        uniform_buffer: _,
+                        uniform_bind_group,
+                    } => {
+                        render_pass.set_bind_group(1, &uniform_bind_group, &[]);
+                        render_pass.set_vertex_buffer(0, shape.vertex_buffer.slice(..));
+                        render_pass
+                            .set_index_buffer(shape.index_buffer.slice(..), Vertex::index_format());
+                        render_pass.draw_indexed(0..shape.index_count as u32, 0, 0..1);
+                    }
+                    NodeKind::Transformation => (), // nothing to draw
+                }
+            }
+        }
+
+        // 3. Draw
         let frame = self
             .swap_chain
             .get_current_frame()
-            .expect("Timeout getting texture")
+            .expect("Timeout getting current frame")
             .output;
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render encoder"),
-            });
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -418,8 +596,9 @@ impl Instance {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-
             render_pass.set_bind_group(0, &scene.uniform_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.shadow_bind_group, &[]);
+
             for n in scene.nodes.iter() {
                 match &n.node.kind {
                     NodeKind::Object {
@@ -428,13 +607,11 @@ impl Instance {
                         uniform_buffer: _,
                         uniform_bind_group,
                     } => {
-                        render_pass.set_bind_group(1, &uniform_bind_group, &[]);
-                        render_pass.set_bind_group(2, &texture.bind_group, &[]);
+                        render_pass.set_bind_group(2, &uniform_bind_group, &[]);
+                        render_pass.set_bind_group(3, &texture.bind_group, &[]);
                         render_pass.set_vertex_buffer(0, shape.vertex_buffer.slice(..));
-                        render_pass.set_index_buffer(
-                            shape.index_buffer.slice(..),
-                            wgpu::IndexFormat::Uint32,
-                        );
+                        render_pass
+                            .set_index_buffer(shape.index_buffer.slice(..), Vertex::index_format());
                         render_pass.draw_indexed(0..shape.index_count as u32, 0, 0..1);
                     }
                     NodeKind::Transformation => (), // nothing to draw
@@ -450,7 +627,9 @@ pub struct Scene {
     nodes: Vec<SceneNode>,
     view_matrix: glm::Mat4x4,
     perspective_matrix: glm::Mat4x4,
-    light_position: glm::Vec4,
+    light_projection_matrix: glm::Mat4x4,
+    light_position: glm::Vec3,
+    light_point_at: glm::Vec3,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
 }
@@ -478,13 +657,21 @@ impl Scene {
                 &glm::vec3(0.0, 0.0, 0.0),
                 &glm::vec3(0.0, 1.0, 0.0),
             ),
-            perspective_matrix: glm::perspective(
+            // Use the _zo version to work with wgpu 0..1 depth coordinates
+            perspective_matrix: glm::perspective_zo(
                 inst.width as f32 / inst.height as f32,
                 glm::radians(&glm::vec1(45.0)).x,
                 2.0,
                 2000.0,
             ),
-            light_position: glm::vec4(0.0, 5.0, 0.0, 1.0),
+            light_projection_matrix: glm::perspective_zo(
+                1.0,
+                glm::radians(&glm::vec1(75.0)).x,
+                2.0,
+                2000.0,
+            ),
+            light_position: glm::vec3(1.0, 5.0, 1.0),
+            light_point_at: glm::zero(),
             uniform_buffer,
             uniform_bind_group,
         }
@@ -515,8 +702,17 @@ impl Scene {
         );
     }
 
-    pub fn set_light_position(&mut self, x: f32, y: f32, z: f32) {
-        self.light_position = glm::vec4(x, y, z, 1.0);
+    pub fn set_light(
+        &mut self,
+        x: f32,
+        y: f32,
+        z: f32,
+        point_at_x: f32,
+        point_at_y: f32,
+        point_at_z: f32,
+    ) {
+        self.light_position = glm::vec3(x, y, z);
+        self.light_point_at = glm::vec3(point_at_x, point_at_y, point_at_z);
     }
 }
 
