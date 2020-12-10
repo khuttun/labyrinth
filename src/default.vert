@@ -4,29 +4,29 @@ layout(location=0) in vec3 position;
 layout(location=1) in vec3 normal;
 layout(location=2) in vec2 texCoords;
 
-layout(location=0) out vec3 fragPosCamSpace;
-layout(location=1) out vec3 fragNormalCamSpace;
+layout(location=0) out vec3 fragPosWorldSpace;
+layout(location=1) out vec3 fragNormalWorldSpace;
 layout(location=2) out vec2 fragTexCoords;
 
 layout(set=0, binding=0)
 uniform SceneUniforms {
-    mat4 projection;
-    vec4 lightPosCamSpace;
+    mat4 viewProjection;
+    vec4 lightPosWorldSpace;
 };
 
 layout(set=1, binding=0)
 uniform ObjectUniforms {
-    mat4 modelView;
-    mat4 normalModelView;
+    mat4 model;
+    mat4 normalModel;
 };
 
 void main()
 {
-    vec4 p = modelView * vec4(position, 1.0);
+    vec4 p = model * vec4(position, 1.0);
 
-    fragPosCamSpace = p.xyz;
-    fragNormalCamSpace = normalize(mat3(normalModelView) * normal);
+    fragPosWorldSpace = p.xyz;
+    fragNormalWorldSpace = normalize(mat3(normalModel) * normal);
     fragTexCoords = texCoords;
 
-    gl_Position = projection * p;
+    gl_Position = viewProjection * p;
 }

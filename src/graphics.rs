@@ -15,15 +15,15 @@ struct Vertex {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
 struct SceneUniforms {
-    projection: [[f32; 4]; 4],
-    light_pos_cam_space: [f32; 4], // Only xyz components used. The vector is 4D to satisfy GLSL uniform alignment requirements.
+    view_projection: [[f32; 4]; 4],
+    light_pos_world_space: [f32; 4], // Only xyz components used. The vector is 4D to satisfy GLSL uniform alignment requirements.
 }
 
 impl SceneUniforms {
-    fn from(proj: &glm::Mat4, light: &glm::Vec4) -> SceneUniforms {
+    fn from(vp: &glm::Mat4, light: &glm::Vec4) -> SceneUniforms {
         SceneUniforms {
-            projection: proj.clone().into(),
-            light_pos_cam_space: light.clone().into(),
+            view_projection: vp.clone().into(),
+            light_pos_world_space: light.clone().into(),
         }
     }
 }
@@ -32,15 +32,15 @@ impl SceneUniforms {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
 struct ObjectUniforms {
-    model_view: [[f32; 4]; 4],
-    model_view_normal: [[f32; 4]; 4],
+    model: [[f32; 4]; 4],
+    model_normal: [[f32; 4]; 4],
 }
 
 impl ObjectUniforms {
-    fn from(mv: &glm::Mat4) -> ObjectUniforms {
+    fn from(m: &glm::Mat4) -> ObjectUniforms {
         ObjectUniforms {
-            model_view: mv.clone().into(),
-            model_view_normal: glm::transpose(&glm::inverse(mv)).into(),
+            model: m.clone().into(),
+            model_normal: glm::transpose(&glm::inverse(m)).into(),
         }
     }
 }
@@ -356,13 +356,12 @@ impl Instance {
 
     pub fn render_scene(&self, scene: &Scene) {
         // 1. Update uniforms
-        let light_pos_cam_space = scene.view_matrix * scene.light_position;
         self.queue.write_buffer(
             &scene.uniform_buffer,
             0,
             bytemuck::cast_slice(&[SceneUniforms::from(
-                &scene.perspective_matrix,
-                &light_pos_cam_space,
+                &(scene.perspective_matrix * scene.view_matrix),
+                &scene.light_position,
             )]),
         );
         for (id, n) in scene.nodes.iter().enumerate() {
@@ -375,11 +374,10 @@ impl Instance {
                 } => {
                     let effective_model_matrix = SceneIterator::new(scene, id)
                         .fold(glm::identity(), |acc, node| node.model_matrix * acc);
-                    let model_view = scene.view_matrix * effective_model_matrix;
                     self.queue.write_buffer(
                         &uniform_buffer,
                         0,
-                        bytemuck::cast_slice(&[ObjectUniforms::from(&model_view)]),
+                        bytemuck::cast_slice(&[ObjectUniforms::from(&effective_model_matrix)]),
                     );
                 }
                 NodeKind::Transformation => (), // no uniforms to update
