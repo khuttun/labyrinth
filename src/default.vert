@@ -8,15 +8,12 @@ layout(location=0) out vec3 fragPosWorldSpace;
 layout(location=1) out vec3 fragNormalWorldSpace;
 layout(location=2) out vec2 fragTexCoords;
 
-layout(set=0, binding=0)
-uniform SceneUniforms {
+layout(set=0, binding=0) uniform SceneUniforms {
     mat4 viewProjection;
-    mat4 lightProjection;
-    vec4 lightPosWorldSpace;
+    uvec4 numLights;
 };
 
-layout(set=2, binding=0)
-uniform ObjectUniforms {
+layout(set=2, binding=0) uniform ObjectUniforms {
     mat4 model;
     mat4 normalModel;
 };

@@ -1,6 +1,8 @@
 use nalgebra_glm as glm;
 use raw_window_handle::HasRawWindowHandle;
-use std::{iter, rc::Rc};
+use std::{iter, num::NonZeroU32, rc::Rc};
+
+const MAX_LIGHTS: usize = 4;
 
 // Data for one vertex
 #[repr(C)]
@@ -44,31 +46,56 @@ impl Vertex {
     }
 }
 
+type RawMat4 = [[f32; 4]; 4];
+
+// Uniforms related to a single light
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
+struct LightUniforms {
+    view_projection: RawMat4, // A matrix projecting a coordinate from world space to the light's "clip space"
+    pos_world_space: [f32; 4], // Only xyz components used. The vector is 4D to satisfy GLSL uniform alignment requirements.
+}
+
+impl LightUniforms {
+    fn from(projection: &glm::Mat4, light: &Light) -> LightUniforms {
+        LightUniforms {
+            view_projection: (projection
+                * glm::look_at(&light.position, &light.point_at, &glm::vec3(0.0, 1.0, 0.0)))
+            .into(),
+            pos_world_space: glm::vec3_to_vec4(&light.position).into(),
+        }
+    }
+}
+
 // Uniforms related to the whole scene
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
 struct SceneUniforms {
-    view_projection: [[f32; 4]; 4],
-    light_projection: [[f32; 4]; 4],
-    light_pos_world_space: [f32; 4], // Only xyz components used. The vector is 4D to satisfy GLSL uniform alignment requirements.
+    view_projection: RawMat4,
+    num_lights: [u32; 4], // Only x component used
 }
 
 impl SceneUniforms {
-    fn from(vp: &glm::Mat4, lp: &glm::Mat4, light: &glm::Vec3) -> SceneUniforms {
+    fn from(view_projection: &glm::Mat4, num_lights: u32) -> SceneUniforms {
         SceneUniforms {
-            view_projection: vp.clone().into(),
-            light_projection: lp.clone().into(),
-            light_pos_world_space: glm::vec3_to_vec4(light).into(),
+            view_projection: view_projection.clone().into(),
+            num_lights: [num_lights, 0, 0, 0],
         }
     }
+}
+
+struct Light {
+    position: glm::Vec3,
+    point_at: glm::Vec3,
+    shadow_map: wgpu::TextureView,
 }
 
 // Uniforms related to one scene object
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
 struct ObjectUniforms {
-    model: [[f32; 4]; 4],
-    model_normal: [[f32; 4]; 4],
+    model: RawMat4,
+    model_normal: RawMat4,
 }
 
 impl ObjectUniforms {
@@ -106,12 +133,14 @@ pub struct Instance {
     swap_chain: wgpu::SwapChain,
     multisampled_fb_texture_view: wgpu::TextureView,
     depth_texture_view: wgpu::TextureView,
-    shadow_texture_view: wgpu::TextureView,
+    shadow_texture: wgpu::Texture,
     shadow_bind_group: wgpu::BindGroup,
     scene_uniform_bind_group_layout: wgpu::BindGroupLayout,
     object_uniform_bind_group_layout: wgpu::BindGroupLayout,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     render_pipeline: wgpu::RenderPipeline,
+    shadow_pass_uniform_buffer: wgpu::Buffer,
+    shadow_pass_uniform_bind_group: wgpu::BindGroup,
     shadow_pipeline: wgpu::RenderPipeline,
 }
 
@@ -198,7 +227,7 @@ impl Instance {
             size: wgpu::Extent3d {
                 width: width.min(height),
                 height: width.min(height),
-                depth: 1,
+                depth: MAX_LIGHTS as u32,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -207,9 +236,10 @@ impl Instance {
             usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
         };
 
-        let shadow_texture_view = device
-            .create_texture(&shadow_texture_desc)
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let shadow_texture = device.create_texture(&shadow_texture_desc);
+
+        let shadow_texture_view =
+            shadow_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Shadow sampler"),
@@ -267,16 +297,30 @@ impl Instance {
         let scene_uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Scene uniform bind group layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                entries: &[
+                    // Scene uniforms
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    // Light uniforms
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
             });
 
         let object_uniform_bind_group_layout =
@@ -386,13 +430,44 @@ impl Instance {
             alpha_to_coverage_enabled: false,
         });
 
+        let shadow_pass_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Shadow pass uniform buffer"),
+            size: std::mem::size_of::<RawMat4>() as wgpu::BufferAddress,
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let shadow_pass_uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Shadow pass uniform bind group layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let shadow_pass_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Shadow pass uniform bind group"),
+            layout: &shadow_pass_uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: shadow_pass_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
         let shadow_vs_module = device.create_shader_module(wgpu::include_spirv!("shadow.vert.spv"));
 
         let shadow_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Shadow pipeline layout"),
                 bind_group_layouts: &[
-                    &scene_uniform_bind_group_layout,
+                    &shadow_pass_uniform_bind_group_layout,
                     &object_uniform_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
@@ -410,7 +485,7 @@ impl Instance {
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: wgpu::CullMode::Back,
                 polygon_mode: wgpu::PolygonMode::Fill,
-                depth_bias: 2,
+                depth_bias: 10,
                 depth_bias_slope_scale: 2.0,
                 depth_bias_clamp: 0.0,
                 clamp_depth: false,
@@ -441,12 +516,14 @@ impl Instance {
             swap_chain,
             multisampled_fb_texture_view,
             depth_texture_view,
-            shadow_texture_view,
+            shadow_texture,
             shadow_bind_group,
             scene_uniform_bind_group_layout,
             object_uniform_bind_group_layout,
             texture_bind_group_layout,
             render_pipeline,
+            shadow_pass_uniform_buffer,
+            shadow_pass_uniform_bind_group,
             shadow_pipeline,
         }
     }
@@ -490,6 +567,39 @@ impl Instance {
         Node::new(NodeKind::Transformation)
     }
 
+    pub fn add_light_to(
+        &self,
+        scene: &mut Scene,
+        x: f32,
+        y: f32,
+        z: f32,
+        point_at_x: f32,
+        point_at_y: f32,
+        point_at_z: f32,
+    ) {
+        let light_index = scene.lights.len();
+        assert!(
+            light_index < MAX_LIGHTS,
+            "Too many lights added to the scene"
+        );
+        scene.lights.push(Light {
+            position: glm::vec3(x, y, z),
+            point_at: glm::vec3(point_at_x, point_at_y, point_at_z),
+            shadow_map: self
+                .shadow_texture
+                .create_view(&wgpu::TextureViewDescriptor {
+                    label: Some(&format!("Shadow map {}", light_index)),
+                    format: None,
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    aspect: wgpu::TextureAspect::All,
+                    base_mip_level: 0,
+                    level_count: None,
+                    base_array_layer: light_index as u32,
+                    array_layer_count: NonZeroU32::new(1),
+                }),
+        });
+    }
+
     pub fn render_scene(&self, scene: &Scene) {
         let mut encoder = self
             .device
@@ -499,19 +609,20 @@ impl Instance {
 
         // 1. Update uniforms
         self.queue.write_buffer(
-            &scene.uniform_buffer,
+            &scene.scene_uniform_buffer,
             0,
             bytemuck::cast_slice(&[SceneUniforms::from(
                 &(scene.perspective_matrix * scene.view_matrix),
-                &(scene.light_projection_matrix
-                    * glm::look_at(
-                        &scene.light_position,
-                        &scene.light_point_at,
-                        &glm::vec3(0.0, 1.0, 0.0),
-                    )),
-                &scene.light_position,
+                scene.lights.len() as u32,
             )]),
         );
+        for (i, light) in scene.lights.iter().enumerate() {
+            self.queue.write_buffer(
+                &scene.light_uniform_buffer,
+                (i * std::mem::size_of::<LightUniforms>()) as wgpu::BufferAddress,
+                bytemuck::cast_slice(&[LightUniforms::from(&scene.light_projection_matrix, light)]),
+            );
+        }
         for (id, n) in scene.nodes.iter().enumerate() {
             match &n.node.kind {
                 NodeKind::Object {
@@ -532,38 +643,54 @@ impl Instance {
             }
         }
 
-        // 2. Create shadow map
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
-                    attachment: &self.shadow_texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
-                    }),
-                    stencil_ops: None,
-                }),
-            });
+        // 2. Create shadow maps
+        for (i, light) in scene.lights.iter().enumerate() {
+            // The "view-projection" matrix for the light already exists in the light uniform buffer
+            // -> copy it to the shadow pass uniform buffer
+            encoder.copy_buffer_to_buffer(
+                &scene.light_uniform_buffer,
+                (i * std::mem::size_of::<LightUniforms>()) as wgpu::BufferAddress,
+                &self.shadow_pass_uniform_buffer,
+                0,
+                std::mem::size_of::<RawMat4>() as wgpu::BufferAddress,
+            );
 
-            render_pass.set_pipeline(&self.shadow_pipeline);
-            render_pass.set_bind_group(0, &scene.uniform_bind_group, &[]);
+            {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(
+                        wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                            attachment: &light.shadow_map,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(1.0),
+                                store: true,
+                            }),
+                            stencil_ops: None,
+                        },
+                    ),
+                });
 
-            for n in scene.nodes.iter() {
-                match &n.node.kind {
-                    NodeKind::Object {
-                        shape,
-                        texture: _,
-                        uniform_buffer: _,
-                        uniform_bind_group,
-                    } => {
-                        render_pass.set_bind_group(1, &uniform_bind_group, &[]);
-                        render_pass.set_vertex_buffer(0, shape.vertex_buffer.slice(..));
-                        render_pass
-                            .set_index_buffer(shape.index_buffer.slice(..), Vertex::index_format());
-                        render_pass.draw_indexed(0..shape.index_count as u32, 0, 0..1);
+                render_pass.set_pipeline(&self.shadow_pipeline);
+                render_pass.set_bind_group(0, &self.shadow_pass_uniform_bind_group, &[]);
+
+                for n in scene.nodes.iter() {
+                    match &n.node.kind {
+                        NodeKind::Object {
+                            shape,
+                            texture: _,
+                            uniform_buffer: _,
+                            uniform_bind_group,
+                        } => {
+                            render_pass.set_bind_group(1, &uniform_bind_group, &[]);
+                            render_pass.set_vertex_buffer(0, shape.vertex_buffer.slice(..));
+                            render_pass.set_index_buffer(
+                                shape.index_buffer.slice(..),
+                                Vertex::index_format(),
+                            );
+                            render_pass.draw_indexed(0..shape.index_count as u32, 0, 0..1);
+                        }
+                        NodeKind::Transformation => (), // nothing to draw
                     }
-                    NodeKind::Transformation => (), // nothing to draw
                 }
             }
         }
@@ -625,33 +752,46 @@ impl Instance {
 
 pub struct Scene {
     nodes: Vec<SceneNode>,
+    lights: Vec<Light>,
     view_matrix: glm::Mat4x4,
     perspective_matrix: glm::Mat4x4,
     light_projection_matrix: glm::Mat4x4,
-    light_position: glm::Vec3,
-    light_point_at: glm::Vec3,
-    uniform_buffer: wgpu::Buffer,
+    scene_uniform_buffer: wgpu::Buffer,
+    light_uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
 }
 
 impl Scene {
     fn new(inst: &Instance) -> Scene {
-        let uniform_buffer = inst.device.create_buffer(&wgpu::BufferDescriptor {
+        let scene_uniform_buffer = inst.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Scene uniform buffer"),
             size: std::mem::size_of::<SceneUniforms>() as wgpu::BufferAddress,
             usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
             mapped_at_creation: false,
         });
+        let light_uniform_buffer = inst.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Light uniform buffer"),
+            size: (MAX_LIGHTS * std::mem::size_of::<LightUniforms>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+            mapped_at_creation: false,
+        });
         let uniform_bind_group = inst.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Scene uniform bind group"),
             layout: &inst.scene_uniform_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: scene_uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: light_uniform_buffer.as_entire_binding(),
+                },
+            ],
         });
         Scene {
             nodes: Vec::new(),
+            lights: Vec::new(),
             view_matrix: glm::look_at(
                 &glm::vec3(0.0, 5.0, 5.0),
                 &glm::vec3(0.0, 0.0, 0.0),
@@ -670,9 +810,8 @@ impl Scene {
                 2.0,
                 2000.0,
             ),
-            light_position: glm::vec3(1.0, 5.0, 1.0),
-            light_point_at: glm::zero(),
-            uniform_buffer,
+            scene_uniform_buffer,
+            light_uniform_buffer,
             uniform_bind_group,
         }
     }
@@ -700,19 +839,6 @@ impl Scene {
             &glm::vec3(center_x, center_y, center_z),
             &glm::vec3(0.0, 1.0, 0.0),
         );
-    }
-
-    pub fn set_light(
-        &mut self,
-        x: f32,
-        y: f32,
-        z: f32,
-        point_at_x: f32,
-        point_at_y: f32,
-        point_at_z: f32,
-    ) {
-        self.light_position = glm::vec3(x, y, z);
-        self.light_point_at = glm::vec3(point_at_x, point_at_y, point_at_z);
     }
 }
 

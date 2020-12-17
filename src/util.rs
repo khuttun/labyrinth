@@ -133,10 +133,29 @@ pub fn play(
         scene.add_node(obj, Some(board_id));
     }
 
-    // Set light position
-    scene.set_light(
-        level_half_w,
-        1.2 * level.size.w.max(level.size.h),
+    // Add lights
+    gfx.add_light_to(
+        &mut scene,
+        0.0,
+        level.size.w.max(level.size.h),
+        -level_half_h,
+        0.0,
+        0.0,
+        0.0,
+    );
+    gfx.add_light_to(
+        &mut scene,
+        -level_half_w,
+        level.size.w.max(level.size.h),
+        level.size.h,
+        0.0,
+        0.0,
+        0.0,
+    );
+    gfx.add_light_to(
+        &mut scene,
+        level.size.w,
+        0.75 * level.size.w.max(level.size.h),
         level_half_h,
         0.0,
         0.0,
