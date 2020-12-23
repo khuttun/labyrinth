@@ -22,11 +22,11 @@ layout(set=0, binding=1) uniform LightUniforms {
     Light lights[MAX_LIGHTS];
 };
 
-layout(set=1, binding=0) uniform texture2DArray shadowMap;
+layout(set=1, binding=0) uniform texture2DArray shadowMaps;
 layout(set=1, binding=1) uniform samplerShadow shadowMapSampler;
 
-layout(set=3, binding=0) uniform texture2D txtr;
-layout(set=3, binding=1) uniform sampler smplr;
+layout(set=3, binding=0) uniform texture2D objectTexture;
+layout(set=3, binding=1) uniform sampler objectTextureSampler;
 
 // "Shadow coefficient": 0 (completely in shadow) ... 1 (completely in light)
 float shadowCoeff(int lightId, vec4 posLightSpaceProjected)
@@ -37,7 +37,7 @@ float shadowCoeff(int lightId, vec4 posLightSpaceProjected)
         return 0.0; // completely outside the light's influence
 
     const float DARKNESS_COEFF = 0.25;
-    return 1.0 - DARKNESS_COEFF + DARKNESS_COEFF * texture(sampler2DArrayShadow(shadowMap, shadowMapSampler),
+    return 1.0 - DARKNESS_COEFF + DARKNESS_COEFF * texture(sampler2DArrayShadow(shadowMaps, shadowMapSampler),
         vec4(
             // Transform NDC coordinates to texture UV coordinates
             0.5 * posLightSpaceNdc.x + 0.5,
@@ -63,6 +63,6 @@ void main()
         luminance += shadow * diffuse / numLights.x;
     }
 
-    vec4 materialColor = texture(sampler2D(txtr, smplr), fragTexCoords);
+    vec4 materialColor = texture(sampler2D(objectTexture, objectTextureSampler), fragTexCoords);
     outputColor = vec4(luminance * materialColor.rgb, materialColor.a);
 }
