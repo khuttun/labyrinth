@@ -408,5 +408,5 @@ fn create_image(bytes: &[u8], format: image::ImageFormat) -> image::RgbaImage {
     image::load_from_memory_with_format(bytes, format)
         .unwrap()
         .flipv()
-        .into_rgba()
+        .into_rgba8()
 }
