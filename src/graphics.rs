@@ -72,7 +72,10 @@ impl Instance {
 
         let sc_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
+            #[cfg(not(target_os = "android"))]
             format: wgpu::TextureFormat::Bgra8Unorm,
+            #[cfg(target_os = "android")]
+            format: wgpu::TextureFormat::Rgba8Unorm,
             width,
             height,
             present_mode: if config.vsync {

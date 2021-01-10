@@ -1,4 +1,5 @@
 use instant::Instant;
+use mobile_entry_point::mobile_entry_point;
 use nalgebra_glm as glm;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -7,7 +8,15 @@ use std::time::Duration;
 mod game;
 mod graphics;
 
+#[mobile_entry_point]
 pub fn run() {
+    #[cfg(target_os = "android")]
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_min_level(log::Level::Info)
+            .with_tag("labyrinth"),
+    );
+
     let args = clap::App::new("labyrinth")
         .args_from_usage(
             "-f                    'Sets fullscreen mode'
@@ -33,6 +42,12 @@ pub fn run() {
 
     let event_loop = winit::event_loop::EventLoop::new();
     let window = winit::window::Window::new(&event_loop).expect("Failed to create window");
+
+    // On Android, the window can be used only after the activity has properly started.
+    // TODO: Could this be handled by waiting for winit::event::Event::Resumed?
+    // https://github.com/rust-windowing/winit/issues/1588
+    #[cfg(target_os = "android")]
+    std::thread::sleep(std::time::Duration::from_secs(2));
 
     let mut w = window.inner_size().width;
     let mut h = window.inner_size().height;
@@ -64,7 +79,7 @@ pub fn run() {
 
     window.set_cursor_visible(false);
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     {
         window
             .set_cursor_position(winit::dpi::PhysicalPosition::new(w / 2, h / 2))
@@ -261,6 +276,9 @@ fn play(
     let mut stats_t = Instant::now();
     let mut stats_frames = 0;
 
+    // Keep track of the last recorded touch position on touch screens
+    let mut last_touch = winit::dpi::PhysicalPosition::new(0.0, 0.0);
+
     // Enter the main loop
     event_loop.run(move |event, _, control_flow| {
         // Use ControlFlow::Poll to wake up event loop immediately again after each iteration.
@@ -291,6 +309,16 @@ fn play(
                 } => {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                 }
+                winit::event::WindowEvent::Touch(touch) => match touch.phase {
+                    winit::event::TouchPhase::Started => last_touch = touch.location,
+                    winit::event::TouchPhase::Moved => {
+                        const ROTATE_COEFF: f32 = 0.0004;
+                        game.rotate_x(ROTATE_COEFF * (touch.location.x - last_touch.x) as f32);
+                        game.rotate_y(ROTATE_COEFF * (touch.location.y - last_touch.y) as f32);
+                        last_touch = touch.location
+                    }
+                    _ => (),
+                },
                 _ => (),
             },
             winit::event::Event::MainEventsCleared => {
