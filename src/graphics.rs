@@ -64,7 +64,6 @@ impl Instance {
                     label: None,
                     features: wgpu::Features::empty(),
                     limits: wgpu::Limits::default(),
-                    shader_validation: true,
                 },
                 None,
             )
@@ -260,8 +259,8 @@ impl Instance {
                 ],
             });
 
-        let vs_module = device.create_shader_module(wgpu::include_spirv!("default.vert.spv"));
-        let fs_module = device.create_shader_module(wgpu::include_spirv!("default.frag.spv"));
+        let vs_module = device.create_shader_module(&wgpu::include_spirv!("default.vert.spv"));
+        let fs_module = device.create_shader_module(&wgpu::include_spirv!("default.frag.spv"));
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -358,7 +357,7 @@ impl Instance {
         });
 
         let shadow_pass_vs_module =
-            device.create_shader_module(wgpu::include_spirv!("shadow.vert.spv"));
+            device.create_shader_module(&wgpu::include_spirv!("shadow.vert.spv"));
 
         let shadow_pass_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -552,6 +551,7 @@ impl Instance {
 
             {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Shadow pass"),
                     color_attachments: &[],
                     depth_stencil_attachment: Some(
                         wgpu::RenderPassDepthStencilAttachmentDescriptor {
@@ -599,6 +599,7 @@ impl Instance {
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &self.msaa_framebuffer,
                     resolve_target: Some(&frame.view),
