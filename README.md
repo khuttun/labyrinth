@@ -34,6 +34,4 @@ Implements the core game logic and physics. Takes no stance on how the game is p
 
 Implements a scene graph based 3D graphics engine using the [wgpu-rs](https://github.com/gfx-rs/wgpu-rs) library. Not specific to Labyrinth, could in principle be used for other purposes also.
 
-### `util`
-
-"Everything else": the main game loop, user input, creating textures, animation and helper functions.
+Everything else (the main game loop, user input, creating textures, animation, helper functions...) is implemented in lib.rs.
