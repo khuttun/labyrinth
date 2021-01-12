@@ -279,8 +279,31 @@ fn play(
     // Keep track of the last recorded touch position on touch screens
     let mut last_touch = winit::dpi::PhysicalPosition::new(0.0, 0.0);
 
+    let mut paused = false;
+
     // Enter the main loop
     event_loop.run(move |event, _, control_flow| {
+        // If paused, just wait for an event that would end the pause.
+        if paused {
+            match event {
+                winit::event::Event::WindowEvent {
+                    event:
+                        winit::event::WindowEvent::MouseInput {
+                            state: winit::event::ElementState::Pressed,
+                            ..
+                        },
+                    ..
+                } => {
+                    paused = false;
+                    *control_flow = winit::event_loop::ControlFlow::Poll;
+                }
+                _ => {
+                    *control_flow = winit::event_loop::ControlFlow::Wait;
+                }
+            }
+
+            return;
+        }
         // Use ControlFlow::Poll to wake up event loop immediately again after each iteration.
         // The render code in graphics module will block appropriately so that frames are created at most at
         // the monitor refresh rate.
@@ -308,6 +331,13 @@ fn play(
                     ..
                 } => {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
+                }
+                winit::event::WindowEvent::MouseInput {
+                    state: winit::event::ElementState::Pressed,
+                    ..
+                } => {
+                    paused = true;
+                    game.reset_time();
                 }
                 winit::event::WindowEvent::Touch(touch) => match touch.phase {
                     winit::event::TouchPhase::Started => last_touch = touch.location,

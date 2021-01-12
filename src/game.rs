@@ -190,6 +190,10 @@ impl Game {
         self.ball_v = Velocity::from(&v);
     }
 
+    pub fn reset_time(&mut self) {
+        self.prev_update = None;
+    }
+
     // Calculate ball (position, velocity) based on current time
     fn do_physics(&self, time: Instant) -> (glm::Vec2, glm::Vec2) {
         let dt = time
