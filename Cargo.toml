@@ -16,6 +16,8 @@ bytemuck_derive = "1.0.0"
 clap = "2.33.3"
 futures = "0.3.7"
 image = "0.23.10"
+# Use the below form in web, see https://github.com/image-rs/image/issues/879
+#image = { version = "0.23.10", default-features = false, features = ["jpeg", "png"] }
 instant = { version = "0.1.8", features = ["wasm-bindgen"] }
 json = "0.12.4"
 mobile-entry-point = "0.1.1"
