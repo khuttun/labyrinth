@@ -25,9 +25,11 @@ pub struct Instance {
     config: Config,
     width: u32,
     height: u32,
+    instance: wgpu::Instance,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    swap_chain: wgpu::SwapChain,
+    swap_chain_descriptor: wgpu::SwapChainDescriptor,
+    swap_chain: Option<wgpu::SwapChain>,
     msaa_framebuffer: wgpu::TextureView,
     depth_buffer: wgpu::TextureView,
     shadow_maps: wgpu::Texture,
@@ -42,19 +44,10 @@ pub struct Instance {
 }
 
 impl Instance {
-    pub async fn new<W: HasRawWindowHandle>(
-        config: Config,
-        window: &W,
-        width: u32,
-        height: u32,
-    ) -> Instance {
+    pub async fn new(config: Config, width: u32, height: u32) -> Instance {
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
-        let surface = unsafe { instance.create_surface(window) };
         let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: Some(&surface),
-            })
+            .request_adapter(&wgpu::RequestAdapterOptions::default())
             .await
             .unwrap();
 
@@ -70,7 +63,7 @@ impl Instance {
             .await
             .unwrap();
 
-        let sc_desc = wgpu::SwapChainDescriptor {
+        let swap_chain_descriptor = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
             #[cfg(not(target_os = "android"))]
             format: wgpu::TextureFormat::Bgra8Unorm,
@@ -85,8 +78,6 @@ impl Instance {
             },
         };
 
-        let swap_chain = device.create_swap_chain(&surface, &sc_desc);
-
         let msaa_framebuffer = device
             .create_texture(&wgpu::TextureDescriptor {
                 label: Some("MSAA framebuffer texture"),
@@ -98,7 +89,7 @@ impl Instance {
                 mip_level_count: 1,
                 sample_count: config.msaa_samples,
                 dimension: wgpu::TextureDimension::D2,
-                format: sc_desc.format,
+                format: swap_chain_descriptor.format,
                 usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
             })
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -299,7 +290,7 @@ impl Instance {
             }),
             primitive_topology: wgpu::PrimitiveTopology::TriangleList,
             color_states: &[wgpu::ColorStateDescriptor {
-                format: sc_desc.format,
+                format: swap_chain_descriptor.format,
                 // Alpha blending as done in glium::Blend::alpha_blending().
                 color_blend: wgpu::BlendDescriptor {
                     src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -410,9 +401,11 @@ impl Instance {
             config,
             width,
             height,
+            instance,
             device,
             queue,
-            swap_chain,
+            swap_chain_descriptor,
+            swap_chain: None,
             msaa_framebuffer,
             depth_buffer,
             shadow_maps,
@@ -424,6 +417,17 @@ impl Instance {
             shadow_pass_uniform_buffer,
             shadow_pass_uniform_bind_group,
             shadow_pass_pipeline,
+        }
+    }
+
+    pub fn set_window<W: HasRawWindowHandle>(&mut self, window: Option<&W>) {
+        self.swap_chain = if let Some(w) = window {
+            Some(self.device.create_swap_chain(
+                &unsafe { self.instance.create_surface(w) },
+                &self.swap_chain_descriptor,
+            ))
+        } else {
+            None
         }
     }
 
@@ -498,6 +502,10 @@ impl Instance {
     }
 
     pub fn render_scene(&self, scene: &Scene) {
+        if self.swap_chain.is_none() {
+            return;
+        }
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -596,6 +604,8 @@ impl Instance {
         // 3. Draw
         let frame = self
             .swap_chain
+            .as_ref()
+            .unwrap()
             .get_current_frame()
             .expect("Timeout getting current frame")
             .output;

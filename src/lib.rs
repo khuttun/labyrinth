@@ -89,13 +89,15 @@ pub fn run() {
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let gfx = futures::executor::block_on(graphics::Instance::new(gfx_cfg, &window, w, h));
+        let mut gfx = futures::executor::block_on(graphics::Instance::new(gfx_cfg, w, h));
+        gfx.set_window(Some(&window));
         play(gfx, event_loop, static_camera, stats);
     }
     #[cfg(target_arch = "wasm32")]
     {
         wasm_bindgen_futures::spawn_local(async move {
-            let gfx = graphics::Instance::new(gfx_cfg, &window, w, h).await;
+            let mut gfx = graphics::Instance::new(gfx_cfg, w, h).await;
+            gfx.set_window(Some(&window));
             play(gfx, event_loop, static_camera, stats);
         });
     }
