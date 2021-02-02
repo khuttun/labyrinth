@@ -30,7 +30,8 @@ Labyrinth can be built for Android using [cargo-mobile](https://github.com/Brain
 
 1. Create an empty directory and init a cargo-mobile project with name "labyrinth" there using the wgpu template pack
 2. Copy the directories ".cargo", "assets" and "gen", and the file "mobile.toml" to Labyrinth main directory
-3. Follow the cargo-mobile instructions for building the project for Android (in the Labyrinth directory)
+3. Add `android:screenOrientation="landscape"` attribute to `activity` element in gen/android/labyrinth/app/src/main/AndroidManifest.xml
+4. Follow the cargo-mobile instructions for building the project for Android (in the Labyrinth directory)
 
 ## Modules
 
