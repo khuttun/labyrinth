@@ -44,7 +44,7 @@ pub fn run() {
     let window = winit::window::Window::new(&event_loop).expect("Failed to create window");
 
     // On Android, the window can be used only after the activity has properly started.
-    // TODO: Could this be handled by waiting for winit::event::Event::Resumed?
+    // TODO: Could this be handled by polling for window properties or waiting for winit::event::Event::Resumed?
     // https://github.com/rust-windowing/winit/issues/1588
     #[cfg(target_os = "android")]
     std::thread::sleep(std::time::Duration::from_secs(2));
@@ -91,21 +91,22 @@ pub fn run() {
     {
         let mut gfx = futures::executor::block_on(graphics::Instance::new(gfx_cfg, w, h));
         gfx.set_window(Some(&window));
-        play(gfx, event_loop, static_camera, stats);
+        play(gfx, event_loop, window, static_camera, stats);
     }
     #[cfg(target_arch = "wasm32")]
     {
         wasm_bindgen_futures::spawn_local(async move {
             let mut gfx = graphics::Instance::new(gfx_cfg, w, h).await;
             gfx.set_window(Some(&window));
-            play(gfx, event_loop, static_camera, stats);
+            play(gfx, event_loop, window, static_camera, stats);
         });
     }
 }
 
 fn play(
-    gfx: graphics::Instance,
+    mut gfx: graphics::Instance,
     event_loop: winit::event_loop::EventLoop<()>,
+    window: winit::window::Window,
     static_camera: bool,
     stats: bool,
 ) {
@@ -278,32 +279,55 @@ fn play(
     let mut stats_t = Instant::now();
     let mut stats_frames = 0;
 
-    // Keep track of the last recorded touch position on touch screens
-    let mut last_touch = winit::dpi::PhysicalPosition::new(0.0, 0.0);
+    // Keep track of the last recorded touch on touch screens
+    let mut last_touch_start_t = None;
+    let mut last_touch_pos = None;
 
-    let mut paused = false;
+    let mut game_paused = false;
 
     // Enter the main loop
     event_loop.run(move |event, _, control_flow| {
-        // If paused, just wait for an event that would end the pause.
-        if paused {
-            match event {
-                winit::event::Event::WindowEvent {
-                    event:
-                        winit::event::WindowEvent::MouseInput {
-                            state: winit::event::ElementState::Pressed,
-                            ..
-                        },
-                    ..
-                } => {
-                    paused = false;
-                    *control_flow = winit::event_loop::ControlFlow::Poll;
-                }
-                _ => {
-                    *control_flow = winit::event_loop::ControlFlow::Wait;
+        let mut detect_double_tap = || {
+            let now = Instant::now();
+            if let Some(t0) = last_touch_start_t {
+                if now.duration_since(t0) < Duration::from_millis(400) {
+                    last_touch_start_t = None;
+                    return true;
                 }
             }
+            last_touch_start_t = Some(now);
+            return false;
+        };
 
+        // If paused, just wait for an event that would end the pause.
+        if game_paused {
+            *control_flow = winit::event_loop::ControlFlow::Wait;
+            match event {
+                winit::event::Event::Resumed => {
+                    // When the application is suspended (on mobile platforms), the window object becomes unusable.
+                    // Recreate it here when the application is resuming and draw the current scene.
+                    gfx.set_window(Some(&window));
+                    gfx.render_scene(&scene);
+                }
+                winit::event::Event::WindowEvent { event, .. } => match event {
+                    winit::event::WindowEvent::MouseInput {
+                        state: winit::event::ElementState::Pressed,
+                        ..
+                    } => {
+                        game_paused = false;
+                    }
+                    winit::event::WindowEvent::Touch(touch) => match touch.phase {
+                        winit::event::TouchPhase::Started => {
+                            if detect_double_tap() {
+                                game_paused = false;
+                            }
+                        }
+                        _ => (),
+                    },
+                    _ => (),
+                },
+                _ => (),
+            }
             return;
         }
         // Use ControlFlow::Poll to wake up event loop immediately again after each iteration.
@@ -311,6 +335,11 @@ fn play(
         // the monitor refresh rate.
         *control_flow = winit::event_loop::ControlFlow::Poll;
         match event {
+            winit::event::Event::Suspended => {
+                gfx.set_window(None as Option<&winit::window::Window>);
+                game_paused = true;
+                game.reset_time();
+            }
             winit::event::Event::DeviceEvent { event, .. } => match event {
                 winit::event::DeviceEvent::MouseMotion { delta } => {
                     const ROTATE_COEFF: f32 = 0.0002;
@@ -338,16 +367,24 @@ fn play(
                     state: winit::event::ElementState::Pressed,
                     ..
                 } => {
-                    paused = true;
+                    game_paused = true;
                     game.reset_time();
                 }
                 winit::event::WindowEvent::Touch(touch) => match touch.phase {
-                    winit::event::TouchPhase::Started => last_touch = touch.location,
+                    winit::event::TouchPhase::Started => {
+                        if detect_double_tap() {
+                            game_paused = true;
+                            game.reset_time();
+                        }
+                        last_touch_pos = Some(touch.location);
+                    }
                     winit::event::TouchPhase::Moved => {
-                        const ROTATE_COEFF: f32 = 0.0004;
-                        game.rotate_x(ROTATE_COEFF * (touch.location.x - last_touch.x) as f32);
-                        game.rotate_y(ROTATE_COEFF * (touch.location.y - last_touch.y) as f32);
-                        last_touch = touch.location
+                        if let Some(last_pos) = last_touch_pos {
+                            const ROTATE_COEFF: f32 = 0.0004;
+                            game.rotate_x(ROTATE_COEFF * (touch.location.x - last_pos.x) as f32);
+                            game.rotate_y(ROTATE_COEFF * (touch.location.y - last_pos.y) as f32);
+                        }
+                        last_touch_pos = Some(touch.location);
                     }
                     _ => (),
                 },
