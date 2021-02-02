@@ -602,13 +602,12 @@ impl Instance {
         }
 
         // 3. Draw
-        let frame = self
-            .swap_chain
-            .as_ref()
-            .unwrap()
-            .get_current_frame()
-            .expect("Timeout getting current frame")
-            .output;
+        let frame = self.swap_chain.as_ref().unwrap().get_current_frame();
+        if let Err(e) = frame {
+            eprintln!("Failed to get frame: {}", e);
+            return;
+        }
+        let frame = frame.unwrap().output;
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
