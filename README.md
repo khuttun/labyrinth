@@ -39,8 +39,10 @@ Labyrinth can be built for Android using [cargo-mobile](https://github.com/Brain
 
 Implements the core game logic and physics. Takes no stance on how the game is presented or how user input is given. Note that even though Labyrinth is a 3D game, the physics in `game` module are 2D.
 
+### `game_loop`
+
+The main game loop: maintains overall application state (game in progress, paused...), handles events, updates game state and the objects in the scene graph, and triggers rendering.
+
 ### `graphics`
 
 Implements a scene graph based 3D graphics engine using the [wgpu-rs](https://github.com/gfx-rs/wgpu-rs) library. Not specific to Labyrinth, could in principle be used for other purposes also.
-
-Everything else (the main game loop, user input, creating textures, animation, helper functions...) is implemented in lib.rs.

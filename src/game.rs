@@ -136,8 +136,8 @@ pub struct Game {
     pub ball_v: Velocity,
     pub angle_x: f32, // Board angle w.r.t. x-axis in radians
     pub angle_y: f32,
+    pub level: Level,
     prev_update: Option<Instant>,
-    level: Level,
 }
 
 impl Game {
@@ -148,8 +148,8 @@ impl Game {
             ball_v: Velocity { x: 0.0, y: 0.0 },
             angle_x: 0.0,
             angle_y: 0.0,
-            prev_update: None,
             level: lvl,
+            prev_update: None,
         }
     }
 

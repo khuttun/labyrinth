@@ -1,11 +1,9 @@
-use instant::Instant;
 use mobile_entry_point::mobile_entry_point;
-use nalgebra_glm as glm;
 use std::rc::Rc;
 use std::str::FromStr;
-use std::time::Duration;
 
 mod game;
+mod game_loop;
 mod graphics;
 
 #[mobile_entry_point]
@@ -90,6 +88,8 @@ pub fn run() {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let mut gfx = futures::executor::block_on(graphics::Instance::new(gfx_cfg, w, h));
+        // on Android, the first Resumed event will set the window
+        #[cfg(not(target_os = "android"))]
         gfx.set_window(Some(&window));
         play(gfx, event_loop, window, static_camera, stats);
     }
@@ -104,7 +104,7 @@ pub fn run() {
 }
 
 fn play(
-    mut gfx: graphics::Instance,
+    gfx: graphics::Instance,
     event_loop: winit::event_loop::EventLoop<()>,
     window: winit::window::Window,
     static_camera: bool,
@@ -272,205 +272,20 @@ fn play(
     );
 
     // Create a new game from the level
-    let mut game = game::Game::new(level);
-
-    // Statistics
-    const STATS_INTERVAL: Duration = Duration::from_secs(5);
-    let mut stats_t = Instant::now();
-    let mut stats_frames = 0;
-
-    // Keep track of the last recorded touch on touch screens
-    let mut last_touch_start_t = None;
-    let mut last_touch_pos = None;
-
-    let mut game_paused = false;
+    let game = game::Game::new(level);
 
     // Enter the main loop
-    event_loop.run(move |event, _, control_flow| {
-        let mut detect_double_tap = || {
-            let now = Instant::now();
-            if let Some(t0) = last_touch_start_t {
-                if now.duration_since(t0) < Duration::from_millis(400) {
-                    last_touch_start_t = None;
-                    return true;
-                }
-            }
-            last_touch_start_t = Some(now);
-            return false;
-        };
-
-        // If paused, just wait for an event that would end the pause.
-        if game_paused {
-            *control_flow = winit::event_loop::ControlFlow::Wait;
-            match event {
-                winit::event::Event::Resumed => {
-                    // When the application is suspended (on mobile platforms), the window object becomes unusable.
-                    // Recreate it here when the application is resuming and draw the current scene.
-                    gfx.set_window(Some(&window));
-                    gfx.render_scene(&scene);
-                }
-                winit::event::Event::WindowEvent { event, .. } => match event {
-                    winit::event::WindowEvent::MouseInput {
-                        state: winit::event::ElementState::Pressed,
-                        ..
-                    } => {
-                        game_paused = false;
-                    }
-                    winit::event::WindowEvent::Touch(touch) => match touch.phase {
-                        winit::event::TouchPhase::Started => {
-                            if detect_double_tap() {
-                                game_paused = false;
-                            }
-                        }
-                        _ => (),
-                    },
-                    _ => (),
-                },
-                _ => (),
-            }
-            return;
-        }
-        // Use ControlFlow::Poll to wake up event loop immediately again after each iteration.
-        // The render code in graphics module will block appropriately so that frames are created at most at
-        // the monitor refresh rate.
-        *control_flow = winit::event_loop::ControlFlow::Poll;
-        match event {
-            winit::event::Event::Suspended => {
-                gfx.set_window(None as Option<&winit::window::Window>);
-                game_paused = true;
-                game.reset_time();
-            }
-            winit::event::Event::DeviceEvent { event, .. } => match event {
-                winit::event::DeviceEvent::MouseMotion { delta } => {
-                    const ROTATE_COEFF: f32 = 0.0002;
-                    game.rotate_x(ROTATE_COEFF * delta.0 as f32);
-                    game.rotate_y(ROTATE_COEFF * delta.1 as f32);
-                }
-                _ => (),
-            },
-            winit::event::Event::WindowEvent { event, .. } => match event {
-                winit::event::WindowEvent::CloseRequested => {
-                    *control_flow = winit::event_loop::ControlFlow::Exit;
-                }
-                winit::event::WindowEvent::KeyboardInput {
-                    input:
-                        winit::event::KeyboardInput {
-                            virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
-                            state: winit::event::ElementState::Pressed,
-                            ..
-                        },
-                    ..
-                } => {
-                    *control_flow = winit::event_loop::ControlFlow::Exit;
-                }
-                winit::event::WindowEvent::MouseInput {
-                    state: winit::event::ElementState::Pressed,
-                    ..
-                } => {
-                    game_paused = true;
-                    game.reset_time();
-                }
-                winit::event::WindowEvent::Touch(touch) => match touch.phase {
-                    winit::event::TouchPhase::Started => {
-                        if detect_double_tap() {
-                            game_paused = true;
-                            game.reset_time();
-                        }
-                        last_touch_pos = Some(touch.location);
-                    }
-                    winit::event::TouchPhase::Moved => {
-                        if let Some(last_pos) = last_touch_pos {
-                            const ROTATE_COEFF: f32 = 0.0004;
-                            game.rotate_x(ROTATE_COEFF * (touch.location.x - last_pos.x) as f32);
-                            game.rotate_y(ROTATE_COEFF * (touch.location.y - last_pos.y) as f32);
-                        }
-                        last_touch_pos = Some(touch.location);
-                    }
-                    _ => (),
-                },
-                _ => (),
-            },
-            winit::event::Event::MainEventsCleared => {
-                // Update game state
-                let p0 = game.ball_pos;
-                let now = Instant::now();
-                game.update(now);
-                let ball_pos_delta = glm::vec3(game.ball_pos.x - p0.x, 0.0, game.ball_pos.y - p0.y);
-
-                // Update scene
-                scene
-                    .get_node(board_id)
-                    .set_rotation(game.angle_y, 0.0, -game.angle_x);
-                match game.state {
-                    game::State::InProgress => {
-                        // Ball position
-                        scene.get_node(ball_id).set_position(
-                            game.ball_pos.x - level_half_w,
-                            game::BALL_R,
-                            game.ball_pos.y - level_half_h,
-                        );
-
-                        // Ball rotation
-                        let axis_world_space = glm::normalize(&glm::rotate_vec3(
-                            &ball_pos_delta,
-                            std::f32::consts::PI / 2.0,
-                            &glm::vec3(0.0, 1.0, 0.0),
-                        ));
-                        scene.get_node(ball_id).rotate_in_world_space(
-                            glm::length(&ball_pos_delta) / game::BALL_R,
-                            axis_world_space.x,
-                            axis_world_space.y,
-                            axis_world_space.z,
-                        );
-
-                        // Camera movement
-                        if !static_camera {
-                            scene.look_at(
-                                game.ball_pos.x - level_half_w,
-                                40.0 * game::BALL_R,
-                                game.ball_pos.y - level_half_h + 10.0 * game::BALL_R,
-                                game.ball_pos.x - level_half_w,
-                                0.0,
-                                game.ball_pos.y - level_half_h,
-                            );
-                        }
-                    }
-                    game::State::Lost { hole, t_lost } => {
-                        match animate_ball_falling_in_hole(
-                            now.duration_since(t_lost).as_secs_f32(),
-                            game.ball_pos,
-                            hole,
-                        ) {
-                            Some((x, y, z)) => scene.get_node(ball_id).set_position(
-                                x - level_half_w,
-                                z,
-                                y - level_half_h,
-                            ),
-                            None => scene.get_node(ball_id).set_scaling(0.0, 0.0, 0.0),
-                        }
-                    }
-                    _ => (),
-                }
-
-                // Render
-                gfx.render_scene(&scene);
-
-                // Statistics
-                if stats {
-                    stats_frames = stats_frames + 1;
-                    let now = Instant::now();
-                    let elapsed = now.duration_since(stats_t);
-                    if elapsed >= STATS_INTERVAL {
-                        let fps = stats_frames as f64 / elapsed.as_secs_f64();
-                        println!("FPS {}", fps);
-                        stats_t = now;
-                        stats_frames = 0;
-                    }
-                }
-            }
-            _ => (),
-        }
-    });
+    let mut gl = game_loop::GameLoop::new(
+        window,
+        game,
+        gfx,
+        scene,
+        board_id,
+        ball_id,
+        static_camera,
+        stats,
+    );
+    event_loop.run(move |ev, _, cf| *cf = gl.handle_event(&ev));
 }
 
 const BOARD_WALL_W: f32 = game::BALL_R; // width of board edge walls
@@ -538,46 +353,6 @@ fn punch_holes(img: &mut image::RgbaImage, level: &game::Level) {
                 }
             }
         }
-    }
-}
-
-// Calculates the ball position (x, y, z) when the game has been lost and the ball is falling in to hole.
-// x and y are in game coordinates, z is the vertical distance from the game's board surface.
-// The animation has finite duration and `None` is returned when the animation has finished.
-// `t` is the duration since (in s), and `last_ball_pos` is the ball position when the game was lost.
-// `hole_pos` is the center of the hole where the ball is falling.
-fn animate_ball_falling_in_hole(
-    t: f32,
-    last_ball_pos: game::Point,
-    hole_pos: game::Point,
-) -> Option<(f32, f32, f32)> {
-    const ROLL_OVER_DURATION: f32 = 0.1;
-    const FREE_FALL_DURATION: f32 = 0.1;
-    const TOTAL_DURATION: f32 = ROLL_OVER_DURATION + FREE_FALL_DURATION;
-    const FREE_FALL_DEPTH: f32 = 3.0 * game::BALL_R;
-
-    let hole = glm::vec2(hole_pos.x, hole_pos.y);
-    let ball0 = glm::vec2(last_ball_pos.x, last_ball_pos.y);
-
-    // xy-point where the ball has completely rolled over the hole edge
-    let free_fall_point = hole + glm::normalize(&(ball0 - hole)) * (game::HOLE_R - game::BALL_R);
-
-    match t {
-        t if t < ROLL_OVER_DURATION => {
-            let xy = ball0 + (free_fall_point - ball0) * (t / ROLL_OVER_DURATION);
-            let ds_hole_edge = game::HOLE_R - glm::distance(&hole, &xy);
-            Some((
-                xy.x,
-                xy.y,
-                (game::BALL_R.powi(2) - ds_hole_edge.powi(2)).sqrt(),
-            ))
-        }
-        t if t < TOTAL_DURATION => Some((
-            free_fall_point.x,
-            free_fall_point.y,
-            -(t - ROLL_OVER_DURATION) / FREE_FALL_DURATION * FREE_FALL_DEPTH,
-        )),
-        _ => None,
     }
 }
 
