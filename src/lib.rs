@@ -7,7 +7,7 @@ mod game_loop;
 mod graphics;
 
 #[mobile_entry_point]
-pub fn run() {
+pub fn init() {
     #[cfg(target_os = "android")]
     android_logger::init_once(
         android_logger::Config::default()
@@ -91,160 +91,258 @@ pub fn run() {
         // on Android, the first Resumed event will set the window
         #[cfg(not(target_os = "android"))]
         gfx.set_window(Some(&window));
-        play(gfx, event_loop, window, static_camera, stats);
+        run(gfx, event_loop, window, static_camera, stats);
     }
     #[cfg(target_arch = "wasm32")]
     {
         wasm_bindgen_futures::spawn_local(async move {
             let mut gfx = graphics::Instance::new(gfx_cfg, w, h).await;
             gfx.set_window(Some(&window));
-            play(gfx, event_loop, window, static_camera, stats);
+            run(gfx, event_loop, window, static_camera, stats);
         });
     }
 }
 
-fn play(
+fn run(
     gfx: graphics::Instance,
     event_loop: winit::event_loop::EventLoop<()>,
     window: winit::window::Window,
     static_camera: bool,
     stats: bool,
 ) {
-    let level = game::Level::from_json(include_str!("level1.json"));
-    let level_half_w = level.size.w / 2.0;
-    let level_half_h = level.size.h / 2.0;
-
-    // Shapes
+    // Create common assets
     let quad = Rc::new(gfx.create_shape("quad", include_str!("quad.ply")));
     let cube = Rc::new(gfx.create_shape("cube", include_str!("cube.ply")));
     let sphere = Rc::new(gfx.create_shape("sphere", include_str!("sphere.ply")));
-
-    // Textures
-    println!("Loading wall texture...");
-    let wall_img = create_image(include_bytes!("wall.jpg"), image::ImageFormat::Jpeg);
-    let wall_tex =
-        Rc::new(gfx.create_texture("wall", wall_img.width(), wall_img.height(), &wall_img));
-    println!("Loading ball texture...");
-    let ball_img = create_image(include_bytes!("ball.jpg"), image::ImageFormat::Jpeg);
-    let ball_tex =
-        Rc::new(gfx.create_texture("ball", ball_img.width(), ball_img.height(), &ball_img));
-    println!("Loading board texture...");
-    let mut board_img = create_image(include_bytes!("board.jpg"), image::ImageFormat::Jpeg);
-    punch_holes(&mut board_img, &level);
-    let board_tex =
-        Rc::new(gfx.create_texture("board", board_img.width(), board_img.height(), &board_img));
-    println!("Loading board markings texture...");
-    let board_markings_img = create_image(
-        include_bytes!("level1_markings.png"),
-        image::ImageFormat::Png,
+    let wall_tex = texture_from_image(
+        &gfx,
+        "wall",
+        &create_image(include_bytes!("wall.jpg"), image::ImageFormat::Jpeg),
     );
-    let board_markings_tex = Rc::new(gfx.create_texture(
-        "markings",
-        board_markings_img.width(),
-        board_markings_img.height(),
-        &board_markings_img,
-    ));
-    println!("Textures done");
+    let ball_tex = texture_from_image(
+        &gfx,
+        "ball",
+        &create_image(include_bytes!("ball.jpg"), image::ImageFormat::Jpeg),
+    );
+
+    // Create level
+    let level1 = game::Level::from_json(include_str!("level1.json"));
 
     // The scene
-    let mut scene = gfx.create_scene();
+    let scene_data = create_scene(
+        &gfx,
+        &level1,
+        &quad,
+        &cube,
+        &sphere,
+        &wall_tex,
+        &ball_tex,
+        &create_image(include_bytes!("board.jpg"), image::ImageFormat::Jpeg),
+        &create_image(
+            include_bytes!("level1_markings.png"),
+            image::ImageFormat::Png,
+        ),
+    );
 
-    // Board outer walls
+    // Create a new game from the level
+    let game = game::Game::new(level1);
+
+    // Enter the main loop
+    let mut gl = game_loop::GameLoop::new(
+        window,
+        game,
+        gfx,
+        scene_data.scene,
+        scene_data.board_id,
+        scene_data.ball_id,
+        static_camera,
+        stats,
+    );
+    event_loop.run(move |ev, _, cf| *cf = gl.handle_event(&ev));
+}
+
+struct LabyrinthScene {
+    scene: graphics::Scene,
+    board_id: graphics::NodeId,
+    ball_id: graphics::NodeId,
+}
+
+// Creata a scene and add objects to it based on level
+fn create_scene(
+    gfx: &graphics::Instance,
+    level: &game::Level,
+    quad_shape: &Rc<graphics::Shape>,
+    cube_shape: &Rc<graphics::Shape>,
+    sphere_shape: &Rc<graphics::Shape>,
+    wall_tex: &Rc<graphics::Texture>,
+    ball_tex: &Rc<graphics::Texture>,
+    board_img: &image::RgbaImage,
+    board_markings_img: &image::RgbaImage,
+) -> LabyrinthScene {
+    let mut scene = gfx.create_scene();
+    add_outer_walls(&mut scene, gfx, level, cube_shape, wall_tex);
+    // Parent node for board moving parts
+    let board_id = scene.add_node(gfx.create_transformation(), None);
+    // Ball has to be added to the scene before the board surface to draw ball falling in to hole correctly
+    let ball_id = add_ball(&mut scene, board_id, gfx, level, sphere_shape, ball_tex);
+    add_board_surface(
+        &mut scene,
+        board_id,
+        gfx,
+        level,
+        quad_shape,
+        board_img,
+        board_markings_img,
+    );
+    add_edge_walls(&mut scene, board_id, gfx, level, cube_shape, wall_tex);
+    add_walls(&mut scene, board_id, gfx, level, cube_shape, wall_tex);
+    add_lights(&mut scene, gfx, level);
+    set_initial_camera_position(&mut scene, level);
+    return LabyrinthScene {
+        scene,
+        board_id,
+        ball_id,
+    };
+}
+
+const BOARD_WALL_W: f32 = game::BALL_R; // width of board edge walls
+const WALL_H: f32 = game::BALL_R; // height of all walls
+
+fn add_outer_walls(
+    scene: &mut graphics::Scene,
+    gfx: &graphics::Instance,
+    level: &game::Level,
+    cube_shape: &Rc<graphics::Shape>,
+    wall_tex: &Rc<graphics::Texture>,
+) {
     let outer_wall_area = game::Size {
         w: level.size.w + 3.0 * BOARD_WALL_W,
         h: level.size.h + 3.0 * BOARD_WALL_W,
     };
     scene.add_node(
-        board_wall(Side::Left, &outer_wall_area, &gfx, &cube, &wall_tex),
+        board_wall(Side::Left, &outer_wall_area, gfx, cube_shape, wall_tex),
         None,
     );
     scene.add_node(
-        board_wall(Side::Right, &outer_wall_area, &gfx, &cube, &wall_tex),
+        board_wall(Side::Right, &outer_wall_area, gfx, cube_shape, wall_tex),
         None,
     );
     scene.add_node(
-        board_wall(Side::Top, &outer_wall_area, &gfx, &cube, &wall_tex),
+        board_wall(Side::Top, &outer_wall_area, gfx, cube_shape, wall_tex),
         None,
     );
     scene.add_node(
-        board_wall(Side::Bottom, &outer_wall_area, &gfx, &cube, &wall_tex),
+        board_wall(Side::Bottom, &outer_wall_area, gfx, cube_shape, wall_tex),
         None,
     );
+}
 
-    // Parent node for board moving parts
-    let board = gfx.create_transformation();
-    let board_id = scene.add_node(board, None);
+fn add_edge_walls(
+    scene: &mut graphics::Scene,
+    parent_id: graphics::NodeId,
+    gfx: &graphics::Instance,
+    level: &game::Level,
+    cube_shape: &Rc<graphics::Shape>,
+    wall_tex: &Rc<graphics::Texture>,
+) {
+    scene.add_node(
+        board_wall(Side::Left, &level.size, gfx, cube_shape, wall_tex),
+        Some(parent_id),
+    );
+    scene.add_node(
+        board_wall(Side::Right, &level.size, gfx, cube_shape, wall_tex),
+        Some(parent_id),
+    );
+    scene.add_node(
+        board_wall(Side::Top, &level.size, gfx, cube_shape, wall_tex),
+        Some(parent_id),
+    );
+    scene.add_node(
+        board_wall(Side::Bottom, &level.size, gfx, cube_shape, wall_tex),
+        Some(parent_id),
+    );
+}
 
-    // Ball (has to be added to the scene before the board surface to draw ball falling in to hole correctly)
-    let mut ball = gfx.create_object(&sphere, &ball_tex);
+fn add_walls(
+    scene: &mut graphics::Scene,
+    parent_id: graphics::NodeId,
+    gfx: &graphics::Instance,
+    level: &game::Level,
+    cube_shape: &Rc<graphics::Shape>,
+    wall_tex: &Rc<graphics::Texture>,
+) {
+    for wall in level.walls.iter() {
+        let mut obj = gfx.create_object(cube_shape, wall_tex);
+        obj.set_scaling(wall.size.w, WALL_H, wall.size.h);
+        obj.set_position(
+            wall.pos.x - level.size.w / 2.0 + wall.size.w / 2.0,
+            WALL_H / 2.0,
+            wall.pos.y - level.size.h / 2.0 + wall.size.h / 2.0,
+        );
+        scene.add_node(obj, Some(parent_id));
+    }
+}
+
+fn add_ball(
+    scene: &mut graphics::Scene,
+    parent_id: graphics::NodeId,
+    gfx: &graphics::Instance,
+    level: &game::Level,
+    sphere_shape: &Rc<graphics::Shape>,
+    ball_tex: &Rc<graphics::Texture>,
+) -> graphics::NodeId {
+    let mut ball = gfx.create_object(sphere_shape, ball_tex);
     ball.set_scaling(game::BALL_R, game::BALL_R, game::BALL_R);
     ball.set_position(
-        level.start.x - level_half_w,
+        level.start.x - level.size.w / 2.0,
         game::BALL_R,
-        level.start.y - level_half_h,
+        level.start.y - level.size.h / 2.0,
     );
-    let ball_id = scene.add_node(ball, Some(board_id));
+    return scene.add_node(ball, Some(parent_id));
+}
 
-    // Board surface
-    let mut board_surface = gfx.create_object(&quad, &board_tex);
+fn add_board_surface(
+    scene: &mut graphics::Scene,
+    parent_id: graphics::NodeId,
+    gfx: &graphics::Instance,
+    level: &game::Level,
+    quad_shape: &Rc<graphics::Shape>,
+    board_img: &image::RgbaImage,
+    board_markings_img: &image::RgbaImage,
+) {
+    let mut board_surface =
+        gfx.create_object(quad_shape, &create_board_surface(gfx, board_img, level));
     // extend board surface very slightly below board edge walls so that the background doesn't leak through from the seam
     board_surface.set_scaling(
         level.size.w + BOARD_WALL_W / 100.0,
         1.0,
         level.size.h + BOARD_WALL_W / 100.0,
     );
-    scene.add_node(board_surface, Some(board_id));
+    scene.add_node(board_surface, Some(parent_id));
 
-    // Board markings
-    let mut board_markings = gfx.create_object(&quad, &board_markings_tex);
+    let mut board_markings = gfx.create_object(
+        quad_shape,
+        &texture_from_image(gfx, "markings", board_markings_img),
+    );
     board_markings.set_scaling(level.size.w, 1.0, level.size.h);
     // lift the marking very slightly above the board surface so that there's no z-fighting and the markings are visible
     board_markings.set_position(0.0, game::BALL_R / 100.0, 0.0);
-    scene.add_node(board_markings, Some(board_id));
+    scene.add_node(board_markings, Some(parent_id));
+}
 
-    // Board edge walls
-    scene.add_node(
-        board_wall(Side::Left, &level.size, &gfx, &cube, &wall_tex),
-        Some(board_id),
-    );
-    scene.add_node(
-        board_wall(Side::Right, &level.size, &gfx, &cube, &wall_tex),
-        Some(board_id),
-    );
-    scene.add_node(
-        board_wall(Side::Top, &level.size, &gfx, &cube, &wall_tex),
-        Some(board_id),
-    );
-    scene.add_node(
-        board_wall(Side::Bottom, &level.size, &gfx, &cube, &wall_tex),
-        Some(board_id),
-    );
-
-    // Walls
-    for wall in level.walls.iter() {
-        let mut obj = gfx.create_object(&cube, &wall_tex);
-        obj.set_scaling(wall.size.w, WALL_H, wall.size.h);
-        obj.set_position(
-            wall.pos.x - level_half_w + wall.size.w / 2.0,
-            WALL_H / 2.0,
-            wall.pos.y - level_half_h + wall.size.h / 2.0,
-        );
-        scene.add_node(obj, Some(board_id));
-    }
-
-    // Add lights
+fn add_lights(scene: &mut graphics::Scene, gfx: &graphics::Instance, level: &game::Level) {
     gfx.add_light_to(
-        &mut scene,
+        scene,
         0.0,
         level.size.w.max(level.size.h),
-        -level_half_h,
+        -level.size.h / 2.0,
         0.0,
         0.0,
         0.0,
     );
     gfx.add_light_to(
-        &mut scene,
-        -level_half_w,
+        scene,
+        -level.size.w / 2.0,
         level.size.w.max(level.size.h),
         level.size.h,
         0.0,
@@ -252,16 +350,17 @@ fn play(
         0.0,
     );
     gfx.add_light_to(
-        &mut scene,
+        scene,
         level.size.w,
         0.75 * level.size.w.max(level.size.h),
-        level_half_h,
+        level.size.h / 2.0,
         0.0,
         0.0,
         0.0,
     );
+}
 
-    // Set initial camera position
+fn set_initial_camera_position(scene: &mut graphics::Scene, level: &game::Level) {
     scene.look_at(
         0.0,
         1.2 * level.size.w.max(level.size.h),
@@ -270,26 +369,7 @@ fn play(
         0.0,
         0.0,
     );
-
-    // Create a new game from the level
-    let game = game::Game::new(level);
-
-    // Enter the main loop
-    let mut gl = game_loop::GameLoop::new(
-        window,
-        game,
-        gfx,
-        scene,
-        board_id,
-        ball_id,
-        static_camera,
-        stats,
-    );
-    event_loop.run(move |ev, _, cf| *cf = gl.handle_event(&ev));
 }
-
-const BOARD_WALL_W: f32 = game::BALL_R; // width of board edge walls
-const WALL_H: f32 = game::BALL_R; // height of all walls
 
 enum Side {
     Left,
@@ -334,9 +414,25 @@ fn board_wall(
     return node;
 }
 
-// Draw transparent circles to `img` based on the hole locations of `level`.
-// The image and the level can be different size but their w/h ratio should be the same.
-fn punch_holes(img: &mut image::RgbaImage, level: &game::Level) {
+// Create a texture for the board surface by creating a copy of orig_img cropped to the shape of
+// the level and draw transparent circles to it based on the level hole locations.
+fn create_board_surface(
+    gfx: &graphics::Instance,
+    orig_img: &image::RgbaImage,
+    level: &game::Level,
+) -> Rc<graphics::Texture> {
+    let level_aspect = level.size.w / level.size.h;
+    let cropped_w = if level_aspect < 1.0 {
+        (level_aspect * orig_img.width() as f32) as u32
+    } else {
+        orig_img.width()
+    };
+    let cropped_h = if level_aspect < 1.0 {
+        orig_img.height()
+    } else {
+        (orig_img.width() as f32 / level_aspect) as u32
+    };
+    let mut img = image::imageops::crop_imm(orig_img, 0, 0, cropped_w, cropped_h).to_image();
     let scale = img.width() as f32 / level.size.w;
     let hole_r = scale * game::HOLE_R;
     for hole in level.holes.iter() {
@@ -354,6 +450,15 @@ fn punch_holes(img: &mut image::RgbaImage, level: &game::Level) {
             }
         }
     }
+    return texture_from_image(gfx, "board", &img);
+}
+
+fn texture_from_image(
+    gfx: &graphics::Instance,
+    name: &str,
+    img: &image::RgbaImage,
+) -> Rc<graphics::Texture> {
+    Rc::new(gfx.create_texture(name, img.width(), img.height(), img))
 }
 
 // Create an image suitable for texture use from raw image file bytes
