@@ -230,7 +230,7 @@ fn detect_board_left_edge_collision(ball_pos: glm::Vec2) -> Option<glm::Vec2> {
 }
 
 fn detect_board_right_edge_collision(ball_pos: glm::Vec2, board_size: Size) -> Option<glm::Vec2> {
-    if ball_pos.x >= board_size.w - BALL_R {
+    if ball_pos.x > board_size.w - BALL_R {
         Some(glm::vec2(board_size.w - BALL_R - ball_pos.x, 0.0))
     } else {
         None
@@ -246,7 +246,7 @@ fn detect_board_top_edge_collision(ball_pos: glm::Vec2) -> Option<glm::Vec2> {
 }
 
 fn detect_board_bottom_edge_collision(ball_pos: glm::Vec2, board_size: Size) -> Option<glm::Vec2> {
-    if ball_pos.y >= board_size.h - BALL_R {
+    if ball_pos.y > board_size.h - BALL_R {
         Some(glm::vec2(0.0, board_size.h - BALL_R - ball_pos.y))
     } else {
         None
