@@ -41,6 +41,7 @@ pub struct Instance {
     shadow_pass_uniform_buffer: wgpu::Buffer,
     shadow_pass_uniform_bind_group: wgpu::BindGroup,
     shadow_pass_pipeline: wgpu::RenderPipeline,
+    render_2d_pipeline: wgpu::RenderPipeline,
 }
 
 impl Instance {
@@ -291,7 +292,7 @@ impl Instance {
             primitive_topology: wgpu::PrimitiveTopology::TriangleList,
             color_states: &[wgpu::ColorStateDescriptor {
                 format: swap_chain_descriptor.format,
-                // Alpha blending as done in glium::Blend::alpha_blending().
+                // Blending for straight alpha
                 color_blend: wgpu::BlendDescriptor {
                     src_factor: wgpu::BlendFactor::SrcAlpha,
                     dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
@@ -397,6 +398,68 @@ impl Instance {
             alpha_to_coverage_enabled: false,
         });
 
+        let vs_2d_module = device.create_shader_module(&wgpu::include_spirv!("2d.vert.spv"));
+        let fs_2d_module = device.create_shader_module(&wgpu::include_spirv!("2d.frag.spv"));
+
+        let render_2d_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("2D Render pipeline layout"),
+                bind_group_layouts: &[
+                    &object_uniform_bind_group_layout,
+                    &object_texture_bind_group_layout,
+                ],
+                push_constant_ranges: &[],
+            });
+
+        let render_2d_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("2D Render pipeline"),
+            layout: Some(&render_2d_pipeline_layout),
+            vertex_stage: wgpu::ProgrammableStageDescriptor {
+                module: &vs_2d_module,
+                entry_point: "main",
+            },
+            fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+                module: &fs_2d_module,
+                entry_point: "main",
+            }),
+            rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+                front_face: wgpu::FrontFace::Ccw,
+                // 2D rendering is mainly meant for rendering UI produced by some immediate mode UI
+                // library. Don't cull triangle backfaces as there's no guarantees in what order
+                // the libraries produce the triangles.
+                cull_mode: wgpu::CullMode::None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                depth_bias: 0,
+                depth_bias_slope_scale: 0.0,
+                depth_bias_clamp: 0.0,
+                clamp_depth: false,
+            }),
+            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+            color_states: &[wgpu::ColorStateDescriptor {
+                format: swap_chain_descriptor.format,
+                // Blending for premultiplied alpha
+                color_blend: wgpu::BlendDescriptor {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha_blend: wgpu::BlendDescriptor {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                write_mask: wgpu::ColorWrite::ALL,
+            }],
+            depth_stencil_state: None,
+            vertex_state: wgpu::VertexStateDescriptor {
+                index_format: Some(Vertex2d::index_format()),
+                vertex_buffers: &[Vertex2d::buffer_descriptor()],
+            },
+            sample_count: 1,
+            sample_mask: !0,
+            alpha_to_coverage_enabled: false,
+        });
+
         Instance {
             config,
             width,
@@ -417,6 +480,7 @@ impl Instance {
             shadow_pass_uniform_buffer,
             shadow_pass_uniform_bind_group,
             shadow_pass_pipeline,
+            render_2d_pipeline,
         }
     }
 
@@ -439,6 +503,10 @@ impl Instance {
         Shape::from_ply(self, name, ply)
     }
 
+    pub fn create_shape_2d(&self, name: &str, vertices: &[Vertex2d], indices: &[u32]) -> Shape {
+        Shape::from_2d_triangles(self, name, vertices, indices)
+    }
+
     pub fn create_texture(&self, name: &str, w: u32, h: u32, rgba_data: &[u8]) -> Texture {
         Texture::from_image(self, name, w, h, rgba_data)
     }
@@ -458,16 +526,39 @@ impl Instance {
                 resource: buf.as_entire_binding(),
             }],
         });
-        Node::new(NodeKind::Object {
+        Node::new(NodeKind::Object(Object {
+            shape: Rc::clone(s),
+            texture: Rc::clone(t),
+            uniform_buffer: buf,
+            uniform_bind_group: bind_group,
+        }))
+    }
+
+    pub fn create_transformation(&self) -> Node {
+        Node::new(NodeKind::Transformation)
+    }
+
+    pub fn create_object_2d(&self, s: &Rc<Shape>, t: &Rc<Texture>) -> Object2d {
+        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("2D Object uniform buffer"),
+            size: std::mem::size_of::<Object2dUniforms>() as wgpu::BufferAddress,
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("2D Object uniform bind group"),
+            layout: &self.object_uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buf.as_entire_binding(),
+            }],
+        });
+        Object2d::new(Object {
             shape: Rc::clone(s),
             texture: Rc::clone(t),
             uniform_buffer: buf,
             uniform_bind_group: bind_group,
         })
-    }
-
-    pub fn create_transformation(&self) -> Node {
-        Node::new(NodeKind::Transformation)
     }
 
     pub fn add_light_to(
@@ -501,7 +592,7 @@ impl Instance {
         });
     }
 
-    pub fn render_scene(&self, scene: &Scene) {
+    pub fn render_scene(&self, scene: &Scene, objects2d: &[Object2d]) {
         if self.swap_chain.is_none() {
             return;
         }
@@ -530,12 +621,12 @@ impl Instance {
         }
         for (id, n) in scene.nodes.iter().enumerate() {
             match &n.node.kind {
-                NodeKind::Object {
+                NodeKind::Object(Object {
                     shape: _,
                     texture: _,
                     uniform_buffer,
                     uniform_bind_group: _,
-                } => {
+                }) => {
                     let effective_model_matrix = SceneIterator::new(scene, id)
                         .fold(glm::identity(), |acc, node| node.model_matrix * acc);
                     self.queue.write_buffer(
@@ -546,6 +637,13 @@ impl Instance {
                 }
                 NodeKind::Transformation => (), // no uniforms to update
             }
+        }
+        for obj in objects2d.iter() {
+            self.queue.write_buffer(
+                &obj.object.uniform_buffer,
+                0,
+                bytemuck::cast_slice(&[Object2dUniforms::from(&obj.model_matrix)]),
+            );
         }
 
         // 2. Create shadow maps
@@ -581,12 +679,12 @@ impl Instance {
 
                 for n in scene.nodes.iter() {
                     match &n.node.kind {
-                        NodeKind::Object {
+                        NodeKind::Object(Object {
                             shape,
                             texture: _,
                             uniform_buffer: _,
                             uniform_bind_group,
-                        } => {
+                        }) => {
                             render_pass.set_bind_group(1, &uniform_bind_group, &[]);
                             render_pass.set_vertex_buffer(0, shape.vertex_buffer.slice(..));
                             render_pass.set_index_buffer(
@@ -601,7 +699,6 @@ impl Instance {
             }
         }
 
-        // 3. Draw
         let frame = self.swap_chain.as_ref().unwrap().get_current_frame();
         if let Err(e) = frame {
             eprintln!("Failed to get frame: {}", e);
@@ -609,9 +706,10 @@ impl Instance {
         }
         let frame = frame.unwrap().output;
 
+        // 3. Render the scene
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render pass"),
+                label: Some("Scene render pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &self.msaa_framebuffer,
                     resolve_target: Some(&frame.view),
@@ -636,12 +734,12 @@ impl Instance {
 
             for n in scene.nodes.iter() {
                 match &n.node.kind {
-                    NodeKind::Object {
+                    NodeKind::Object(Object {
                         shape,
                         texture,
                         uniform_buffer: _,
                         uniform_bind_group,
-                    } => {
+                    }) => {
                         render_pass.set_bind_group(2, &uniform_bind_group, &[]);
                         render_pass.set_bind_group(3, &texture.bind_group, &[]);
                         render_pass.set_vertex_buffer(0, shape.vertex_buffer.slice(..));
@@ -651,6 +749,35 @@ impl Instance {
                     }
                     NodeKind::Transformation => (), // nothing to draw
                 }
+            }
+        }
+
+        // 4. Render any 2D graphics on top of the scene
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("2D Render pass"),
+                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: &frame.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                }],
+                depth_stencil_attachment: None,
+            });
+
+            render_pass.set_pipeline(&self.render_2d_pipeline);
+
+            for obj in objects2d.iter() {
+                render_pass.set_bind_group(0, &obj.object.uniform_bind_group, &[]);
+                render_pass.set_bind_group(1, &obj.object.texture.bind_group, &[]);
+                render_pass.set_vertex_buffer(0, obj.object.shape.vertex_buffer.slice(..));
+                render_pass.set_index_buffer(
+                    obj.object.shape.index_buffer.slice(..),
+                    Vertex2d::index_format(),
+                );
+                render_pass.draw_indexed(0..obj.object.shape.index_count as u32, 0, 0..1);
             }
         }
 
@@ -828,6 +955,43 @@ impl Shape {
             index_count: indices.len(),
         }
     }
+
+    fn from_2d_triangles(
+        inst: &Instance,
+        name: &str,
+        vertices: &[Vertex2d],
+        indices: &[u32],
+    ) -> Shape {
+        let vertex_buffer = inst.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(&format!("Vertex buffer {}", name)),
+            size: (vertices.len() * std::mem::size_of::<Vertex2d>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsage::VERTEX,
+            mapped_at_creation: true,
+        });
+        vertex_buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .copy_from_slice(bytemuck::cast_slice(&vertices));
+        vertex_buffer.unmap();
+
+        let index_buffer = inst.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(&format!("Index buffer {}", name)),
+            size: (indices.len() * std::mem::size_of::<u32>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsage::INDEX,
+            mapped_at_creation: true,
+        });
+        index_buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .copy_from_slice(bytemuck::cast_slice(&indices));
+        index_buffer.unmap();
+
+        Shape {
+            vertex_buffer,
+            index_buffer,
+            index_count: indices.len(),
+        }
+    }
 }
 
 pub struct Texture {
@@ -930,13 +1094,15 @@ impl Texture {
     }
 }
 
+struct Object {
+    shape: Rc<Shape>,
+    texture: Rc<Texture>,
+    uniform_buffer: wgpu::Buffer,
+    uniform_bind_group: wgpu::BindGroup,
+}
+
 enum NodeKind {
-    Object {
-        shape: Rc<Shape>,
-        texture: Rc<Texture>,
-        uniform_buffer: wgpu::Buffer,
-        uniform_bind_group: wgpu::BindGroup,
-    },
+    Object(Object),
     Transformation,
 }
 
@@ -1024,6 +1190,38 @@ impl<'a> Iterator for SceneIterator<'a> {
     }
 }
 
+pub struct Object2d {
+    object: Object,
+    scaling: glm::Vec2,
+    translation: glm::Vec2,
+    model_matrix: glm::Mat3x3,
+}
+
+impl Object2d {
+    fn new(object: Object) -> Object2d {
+        Object2d {
+            object,
+            scaling: glm::vec2(1.0, 1.0),
+            translation: glm::vec2(0.0, 0.0),
+            model_matrix: glm::identity(),
+        }
+    }
+
+    pub fn set_scaling(&mut self, x: f32, y: f32) {
+        self.scaling = glm::vec2(x, y);
+        self.update_model_matrix();
+    }
+
+    pub fn set_position(&mut self, x: f32, y: f32) {
+        self.translation = glm::vec2(x, y);
+        self.update_model_matrix();
+    }
+
+    fn update_model_matrix(&mut self) {
+        self.model_matrix = glm::translation2d(&self.translation) * glm::scaling2d(&self.scaling);
+    }
+}
+
 struct Light {
     position: glm::Vec3,
     point_at: glm::Vec3,
@@ -1062,6 +1260,48 @@ impl Vertex {
                     offset: 2 * std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float2,
+                },
+            ],
+        }
+    }
+
+    fn index_format() -> wgpu::IndexFormat {
+        wgpu::IndexFormat::Uint32
+    }
+}
+
+// Data for one 2D vertex
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
+pub struct Vertex2d {
+    pub position: [f32; 2],
+    pub tex_coords: [f32; 2],
+    pub color: [u8; 4],
+}
+
+impl Vertex2d {
+    fn buffer_descriptor<'a>() -> wgpu::VertexBufferDescriptor<'a> {
+        wgpu::VertexBufferDescriptor {
+            stride: std::mem::size_of::<Vertex2d>() as wgpu::BufferAddress,
+            step_mode: wgpu::InputStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttributeDescriptor {
+                    // position
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float2,
+                },
+                wgpu::VertexAttributeDescriptor {
+                    // tex_coords
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float2,
+                },
+                wgpu::VertexAttributeDescriptor {
+                    // color
+                    offset: 2 * std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Uchar4Norm,
                 },
             ],
         }
@@ -1123,6 +1363,21 @@ impl ObjectUniforms {
         ObjectUniforms {
             model: m.clone().into(),
             model_normal: glm::transpose(&glm::inverse(m)).into(),
+        }
+    }
+}
+
+// Uniforms related to one 2D object
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck_derive::Pod, bytemuck_derive::Zeroable)]
+struct Object2dUniforms {
+    model: RawMat4, // Actually mat3, but passed like this for proper alignment
+}
+
+impl Object2dUniforms {
+    fn from(m: &glm::Mat3) -> Object2dUniforms {
+        Object2dUniforms {
+            model: glm::mat3_to_mat4(m).into(),
         }
     }
 }
