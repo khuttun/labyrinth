@@ -32,7 +32,7 @@ Labyrinth can be built for Android using [cargo-mobile](https://github.com/Brain
 
 1. Create an empty directory and init a cargo-mobile project with name "labyrinth" there using the wgpu template pack
 2. Copy the directories ".cargo", "assets" and "gen", and the file "mobile.toml" to Labyrinth main directory
-3. Add `android:screenOrientation="landscape"` attribute to `activity` element in gen/android/labyrinth/app/src/main/AndroidManifest.xml
+3. Add `android:screenOrientation="landscape"` and `android:theme="@android:style/Theme.NoTitleBar.Fullscreen"` attributes to `activity` element in gen/android/labyrinth/app/src/main/AndroidManifest.xml
 4. Follow the cargo-mobile instructions for building the project for Android (in the Labyrinth directory)
 
 ## Modules
@@ -48,3 +48,7 @@ The main game loop: maintains overall application state (game in progress, pause
 ### `graphics`
 
 Implements a scene graph based 3D graphics engine using the [wgpu-rs](https://github.com/gfx-rs/wgpu-rs) library. Not specific to Labyrinth, could in principle be used for other purposes also.
+
+### `ui`
+
+Implements the 2D game UI using the [egui](https://github.com/emilk/egui) library.

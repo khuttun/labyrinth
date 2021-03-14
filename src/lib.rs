@@ -5,6 +5,7 @@ use std::str::FromStr;
 mod game;
 mod game_loop;
 mod graphics;
+mod ui;
 
 #[mobile_entry_point]
 pub fn init() {
@@ -91,14 +92,14 @@ pub fn init() {
         // on Android, the first Resumed event will set the window
         #[cfg(not(target_os = "android"))]
         gfx.set_window(Some(&window));
-        run(gfx, event_loop, window, static_camera, stats);
+        run(gfx, event_loop, window, w, h, static_camera, stats);
     }
     #[cfg(target_arch = "wasm32")]
     {
         wasm_bindgen_futures::spawn_local(async move {
             let mut gfx = graphics::Instance::new(gfx_cfg, w, h).await;
             gfx.set_window(Some(&window));
-            run(gfx, event_loop, window, static_camera, stats);
+            run(gfx, event_loop, window, w, h, static_camera, stats);
         });
     }
 }
@@ -107,6 +108,8 @@ fn run(
     gfx: graphics::Instance,
     event_loop: winit::event_loop::EventLoop<()>,
     window: winit::window::Window,
+    width_pixels: u32,
+    height_pixels: u32,
     static_camera: bool,
     stats: bool,
 ) {
@@ -152,6 +155,11 @@ fn run(
         window,
         game,
         gfx,
+        ui::Instance::new(
+            width_pixels,
+            height_pixels,
+            width_pixels as f32 / 800.0, // Scale the UI to always take the same relative amount from the available space
+        ),
         scene_data.scene,
         scene_data.board_id,
         scene_data.ball_id,

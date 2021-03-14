@@ -13,6 +13,7 @@ use winit::window::Window;
 
 use crate::game;
 use crate::graphics;
+use crate::ui;
 
 type WinitEvent<'a> = Event<'a, ()>;
 
@@ -20,6 +21,7 @@ pub struct GameLoop {
     window: Window,
     game: game::Game,
     gfx: graphics::Instance,
+    ui: ui::Instance,
     scene: graphics::Scene,
     board_node_id: graphics::NodeId,
     ball_node_id: graphics::NodeId,
@@ -27,6 +29,7 @@ pub struct GameLoop {
     state: State,
     double_tap_start_t: Option<Instant>,
     last_touch_pos: Option<PhysicalPosition<f64>>,
+    timer: Stopwatch,
     stats: Option<Stats>,
 }
 
@@ -35,6 +38,7 @@ impl GameLoop {
         window: Window,
         game: game::Game,
         gfx: graphics::Instance,
+        ui: ui::Instance,
         scene: graphics::Scene,
         board_node_id: graphics::NodeId,
         ball_node_id: graphics::NodeId,
@@ -45,6 +49,7 @@ impl GameLoop {
             window,
             game,
             gfx,
+            ui,
             scene,
             board_node_id,
             ball_node_id,
@@ -52,6 +57,7 @@ impl GameLoop {
             state: State::GameInProgress,
             double_tap_start_t: None,
             last_touch_pos: None,
+            timer: Stopwatch::start_new(),
             stats: if print_stats {
                 Some(Stats {
                     frame_count: 0,
@@ -94,7 +100,10 @@ impl GameLoop {
                 let now = Instant::now();
                 let ball_pos_delta = self.update_game(now);
                 self.update_scene(now, ball_pos_delta);
-                self.gfx.render_scene(&self.scene);
+                self.gfx.render_scene(
+                    &self.scene,
+                    &self.ui.update(&self.gfx, self.timer.elapsed()),
+                );
                 self.update_frame_stats(now);
             }
             State::GamePaused => (),
@@ -106,14 +115,17 @@ impl GameLoop {
         // unusable, so reset the handle used in graphics code.
         self.gfx.set_window(None as Option<&winit::window::Window>);
         match self.state {
-            State::GameInProgress => self.pause(),
+            State::GameInProgress => self.pause_game(),
             State::GamePaused => (),
         }
     }
 
     fn resumed(&mut self) {
         self.gfx.set_window(Some(&self.window));
-        self.gfx.render_scene(&self.scene);
+        self.gfx.render_scene(
+            &self.scene,
+            &self.ui.update(&self.gfx, self.timer.elapsed()),
+        );
     }
 
     fn mouse_click(&mut self) {
@@ -142,6 +154,10 @@ impl GameLoop {
     fn update_game(&mut self, now: Instant) -> glm::Vec3 {
         let p0 = self.game.ball_pos;
         self.game.update(now);
+        match self.game.state {
+            game::State::InProgress => (),
+            _ => self.timer.stop(),
+        }
         return glm::vec3(
             self.game.ball_pos.x - p0.x,
             0.0,
@@ -275,14 +291,20 @@ impl GameLoop {
 
     fn toggle_pause(&mut self) {
         match self.state {
-            State::GameInProgress => self.pause(),
-            State::GamePaused => self.state = State::GameInProgress,
+            State::GameInProgress => self.pause_game(),
+            State::GamePaused => self.resume_game(),
         }
     }
 
-    fn pause(&mut self) {
+    fn pause_game(&mut self) {
         self.state = State::GamePaused;
         self.game.reset_time();
+        self.timer.stop();
+    }
+
+    fn resume_game(&mut self) {
+        self.state = State::GameInProgress;
+        self.timer.start();
     }
 }
 
@@ -376,4 +398,37 @@ enum State {
 struct Stats {
     frame_count: u32,
     last_calculated_t: Instant,
+}
+
+struct Stopwatch {
+    elapsed: Duration,
+    start_t: Option<Instant>,
+}
+
+impl Stopwatch {
+    fn start_new() -> Stopwatch {
+        Stopwatch {
+            elapsed: Duration::from_secs(0),
+            start_t: Some(Instant::now()),
+        }
+    }
+    fn start(&mut self) {
+        if self.start_t.is_none() {
+            self.start_t = Some(Instant::now());
+        }
+    }
+
+    fn stop(&mut self) {
+        if let Some(t0) = self.start_t {
+            self.elapsed += Instant::now() - t0;
+        }
+        self.start_t = None;
+    }
+
+    fn elapsed(&self) -> Duration {
+        match self.start_t {
+            Some(t0) => self.elapsed + (Instant::now() - t0),
+            None => self.elapsed,
+        }
+    }
 }
