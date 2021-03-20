@@ -32,10 +32,6 @@ layout(set=3, binding=1) uniform sampler objectTextureSampler;
 float shadowCoeff(int lightId, vec4 posLightSpaceProjected)
 {
     vec3 posLightSpaceNdc = posLightSpaceProjected.xyz / posLightSpaceProjected.w;
-
-    if (abs(posLightSpaceNdc.x) > 1.0 || abs(posLightSpaceNdc.y) > 1.0 || abs(posLightSpaceNdc.z) > 1.0)
-        return 0.0; // completely outside the light's influence
-
     const float DARKNESS_COEFF = 0.25;
     return 1.0 - DARKNESS_COEFF + DARKNESS_COEFF * texture(sampler2DArrayShadow(shadowMaps, shadowMapSampler),
         vec4(
