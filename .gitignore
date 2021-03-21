@@ -1,4 +1,7 @@
+.DS_Store
+/.cargo
+/Cargo.lock
+/gen
+/mobile.toml
 /src/*.spv
 /target
-.DS_Store
-Cargo.lock
