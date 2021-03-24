@@ -666,16 +666,14 @@ impl Instance {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Shadow pass"),
                     color_attachments: &[],
-                    depth_stencil_attachment: Some(
-                        wgpu::RenderPassDepthStencilAttachmentDescriptor {
-                            attachment: &light.shadow_map,
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(1.0),
-                                store: true,
-                            }),
-                            stencil_ops: None,
-                        },
-                    ),
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &light.shadow_map,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: true,
+                        }),
+                        stencil_ops: None,
+                    }),
                 });
 
                 render_pass.set_pipeline(&self.shadow_pass_pipeline);
@@ -714,16 +712,16 @@ impl Instance {
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Scene render pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &self.msaa_framebuffer,
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view: &self.msaa_framebuffer,
                     resolve_target: Some(&frame.view),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: true,
                     },
                 }],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
-                    attachment: &self.depth_buffer,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_buffer,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: true,
@@ -760,8 +758,8 @@ impl Instance {
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("2D Render pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &frame.view,
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view: &frame.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -1046,16 +1044,16 @@ impl Texture {
 
         // Upload the main texture data
         inst.queue.write_texture(
-            wgpu::TextureCopyView {
+            wgpu::ImageCopyTexture {
                 texture: &tex,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
             rgba_data,
-            wgpu::TextureDataLayout {
+            wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: 4 * w,
-                rows_per_image: h,
+                bytes_per_row: NonZeroU32::new(4 * w),
+                rows_per_image: NonZeroU32::new(h),
             },
             wgpu::Extent3d {
                 width: w,
@@ -1075,16 +1073,16 @@ impl Texture {
                 image::imageops::FilterType::Triangle,
             );
             inst.queue.write_texture(
-                wgpu::TextureCopyView {
+                wgpu::ImageCopyTexture {
                     texture: &tex,
                     mip_level: level,
                     origin: wgpu::Origin3d::ZERO,
                 },
                 &mipmap,
-                wgpu::TextureDataLayout {
+                wgpu::ImageDataLayout {
                     offset: 0,
-                    bytes_per_row: 4 * mipmap.width(),
-                    rows_per_image: mipmap.height(),
+                    bytes_per_row: NonZeroU32::new(4 * mipmap.width()),
+                    rows_per_image: NonZeroU32::new(mipmap.height()),
                 },
                 wgpu::Extent3d {
                     width: mipmap.width(),
