@@ -1,19 +1,18 @@
 use instant::Instant;
 use nalgebra_glm as glm;
+use std::rc::Rc;
 use std::time::Duration;
 use winit::dpi::PhysicalPosition;
 use winit::event::DeviceEvent;
 use winit::event::ElementState;
 use winit::event::Event;
 use winit::event::Touch;
-use winit::event::VirtualKeyCode;
 use winit::event::WindowEvent;
 use winit::event_loop::ControlFlow;
 use winit::window::Window;
 
 use crate::game;
 use crate::graphics;
-use crate::ui;
 
 type WinitEvent<'a> = Event<'a, ()>;
 
@@ -21,12 +20,13 @@ pub struct GameLoop {
     window: Window,
     game: game::Game,
     gfx: graphics::Instance,
-    ui: ui::Instance,
+    ui: Ui,
     scene: graphics::Scene,
     board_node_id: graphics::NodeId,
     ball_node_id: graphics::NodeId,
     static_camera: bool,
     state: State,
+    last_cursor_pos: Option<PhysicalPosition<f64>>,
     double_tap_start_t: Option<Instant>,
     last_touch_pos: Option<PhysicalPosition<f64>>,
     timer: Stopwatch,
@@ -38,7 +38,8 @@ impl GameLoop {
         window: Window,
         game: game::Game,
         gfx: graphics::Instance,
-        ui: ui::Instance,
+        width_pixels: u32,
+        height_pixels: u32,
         scene: graphics::Scene,
         board_node_id: graphics::NodeId,
         ball_node_id: graphics::NodeId,
@@ -49,12 +50,17 @@ impl GameLoop {
             window,
             game,
             gfx,
-            ui,
+            ui: Ui::new(
+                width_pixels,
+                height_pixels,
+                width_pixels as f32 / 800.0, // Scale the UI to always take the same relative amount of the available space
+            ),
             scene,
             board_node_id,
             ball_node_id,
             static_camera,
             state: State::GameInProgress,
+            last_cursor_pos: None,
             double_tap_start_t: None,
             last_touch_pos: None,
             timer: Stopwatch::start_new(),
@@ -71,20 +77,24 @@ impl GameLoop {
 
     pub fn handle_event(&mut self, event: &WinitEvent) -> ControlFlow {
         match event {
-            e if is_window_close(e) => return ControlFlow::Exit,
-            e if is_esc_key_press(e) => return ControlFlow::Exit,
             Event::Suspended => self.suspended(),
             Event::Resumed => self.resumed(),
-            e if is_mouse_click(e) => self.mouse_click(),
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::CloseRequested => return ControlFlow::Exit,
+                WindowEvent::CursorMoved { position, .. } => self.cursor_moved(position),
+                WindowEvent::MouseInput { state, .. } => self.mouse_click(state),
+                WindowEvent::Touch(touch) => self.touch(touch),
+                _ => (),
+            },
             Event::DeviceEvent {
                 event: DeviceEvent::MouseMotion { delta },
                 ..
             } => self.mouse_moved(delta),
-            Event::WindowEvent {
-                event: WindowEvent::Touch(touch),
-                ..
-            } => self.touch(touch),
-            Event::MainEventsCleared => self.do_frame(),
+            Event::MainEventsCleared => {
+                if !self.do_frame() {
+                    return ControlFlow::Exit;
+                }
+            }
             _ => (),
         }
 
@@ -94,20 +104,25 @@ impl GameLoop {
         };
     }
 
-    fn do_frame(&mut self) {
+    fn do_frame(&mut self) -> bool {
         match self.state {
             State::GameInProgress => {
                 let now = Instant::now();
                 let ball_pos_delta = self.update_game(now);
                 self.update_scene(now, ball_pos_delta);
-                self.gfx.render_scene(
-                    &self.scene,
-                    &self.ui.update(&self.gfx, self.timer.elapsed()),
-                );
                 self.update_frame_stats(now);
             }
             State::GamePaused => (),
         }
+        let ui_output = self.ui.update(&self.gfx, self.timer.elapsed(), self.state);
+        self.gfx.render_scene(&self.scene, &ui_output.objects);
+        for action in ui_output.actions.iter() {
+            match action {
+                UiAction::ResumeGame => self.resume_game(),
+                UiAction::Quit => return false,
+            }
+        }
+        return true;
     }
 
     fn suspended(&mut self) {
@@ -122,16 +137,30 @@ impl GameLoop {
 
     fn resumed(&mut self) {
         self.gfx.set_window(Some(&self.window));
-        self.gfx.render_scene(
-            &self.scene,
-            &self.ui.update(&self.gfx, self.timer.elapsed()),
-        );
     }
 
-    fn mouse_click(&mut self) {
-        self.toggle_pause();
+    fn mouse_click(&mut self, state: &ElementState) {
+        match self.state {
+            State::GameInProgress => match state {
+                ElementState::Pressed => self.pause_game(),
+                ElementState::Released => (),
+            },
+            State::GamePaused => {
+                if let Some(pos) = self.last_cursor_pos {
+                    self.ui.click(
+                        pos.x as f32,
+                        pos.y as f32,
+                        match state {
+                            ElementState::Pressed => true,
+                            ElementState::Released => false,
+                        },
+                    );
+                }
+            }
+        }
     }
 
+    // Any mouse movement -> control game
     fn mouse_moved(&mut self, delta: &(f64, f64)) {
         match self.state {
             State::GameInProgress => {
@@ -143,10 +172,20 @@ impl GameLoop {
         }
     }
 
+    // New cursor position in the window -> control UI
+    fn cursor_moved(&mut self, pos: &PhysicalPosition<f64>) {
+        self.last_cursor_pos = Some(*pos);
+        match self.state {
+            State::GameInProgress => (),
+            State::GamePaused => self.ui.cursor_moved(pos.x as f32, pos.y as f32),
+        }
+    }
+
     fn touch(&mut self, touch: &Touch) {
         match touch.phase {
             winit::event::TouchPhase::Started => self.touch_started(touch.location),
             winit::event::TouchPhase::Moved => self.swipe(touch.location),
+            winit::event::TouchPhase::Ended => self.touch_ended(touch.location),
             _ => (),
         }
     }
@@ -261,6 +300,10 @@ impl GameLoop {
 
     fn touch_started(&mut self, pos: PhysicalPosition<f64>) {
         let now = Instant::now();
+        match self.state {
+            State::GameInProgress => (),
+            State::GamePaused => self.ui.click(pos.x as f32, pos.y as f32, true),
+        }
         self.double_tap_start_t = match self.double_tap_start_t {
             Some(t0) if now.duration_since(t0) < Duration::from_millis(400) => {
                 self.double_tap();
@@ -280,19 +323,22 @@ impl GameLoop {
                     self.game.rotate_y(ROTATE_COEFF * (pos.y - p0.y) as f32);
                 }
             }
-            State::GamePaused => (),
+            State::GamePaused => self.ui.cursor_moved(pos.x as f32, pos.y as f32),
         }
         self.last_touch_pos = Some(pos);
     }
 
-    fn double_tap(&mut self) {
-        self.toggle_pause();
+    fn touch_ended(&mut self, pos: PhysicalPosition<f64>) {
+        match self.state {
+            State::GameInProgress => (),
+            State::GamePaused => self.ui.click(pos.x as f32, pos.y as f32, false),
+        }
     }
 
-    fn toggle_pause(&mut self) {
+    fn double_tap(&mut self) {
         match self.state {
             State::GameInProgress => self.pause_game(),
-            State::GamePaused => self.resume_game(),
+            State::GamePaused => (),
         }
     }
 
@@ -300,11 +346,21 @@ impl GameLoop {
         self.state = State::GamePaused;
         self.game.reset_time();
         self.timer.stop();
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            self.window.set_cursor_visible(true);
+            self.window.set_cursor_grab(false).unwrap();
+        }
     }
 
     fn resume_game(&mut self) {
         self.state = State::GameInProgress;
         self.timer.start();
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            self.window.set_cursor_visible(false);
+            self.window.set_cursor_grab(true).unwrap();
+        }
     }
 }
 
@@ -348,48 +404,7 @@ fn animate_ball_falling_in_hole(
     }
 }
 
-fn is_window_close(event: &WinitEvent) -> bool {
-    match event {
-        Event::WindowEvent {
-            event: WindowEvent::CloseRequested,
-            ..
-        } => true,
-        _ => false,
-    }
-}
-
-fn is_mouse_click(event: &WinitEvent) -> bool {
-    match event {
-        Event::WindowEvent {
-            event:
-                WindowEvent::MouseInput {
-                    state: ElementState::Pressed,
-                    ..
-                },
-            ..
-        } => true,
-        _ => false,
-    }
-}
-
-fn is_esc_key_press(event: &WinitEvent) -> bool {
-    match event {
-        Event::WindowEvent {
-            event:
-                WindowEvent::KeyboardInput {
-                    input:
-                        winit::event::KeyboardInput {
-                            virtual_keycode: Some(VirtualKeyCode::Escape),
-                            state: winit::event::ElementState::Pressed,
-                            ..
-                        },
-                    ..
-                },
-            ..
-        } => true,
-        _ => false,
-    }
-}
+#[derive(Copy, Clone, Debug)]
 enum State {
     GameInProgress,
     GamePaused,
@@ -431,4 +446,173 @@ impl Stopwatch {
             None => self.elapsed,
         }
     }
+}
+
+struct Ui {
+    ctx: egui::CtxRef,
+    texture: Option<EguiTexture>,
+    width_points: f32,
+    height_points: f32,
+    scale: f32,
+    events: Vec<egui::Event>,
+}
+
+impl Ui {
+    fn new(width_pixels: u32, height_pixels: u32, scale: f32) -> Ui {
+        Ui {
+            ctx: egui::CtxRef::default(),
+            texture: None,
+            width_points: width_pixels as f32 / scale,
+            height_points: height_pixels as f32 / scale,
+            scale,
+            events: Vec::new(),
+        }
+    }
+
+    fn update(
+        &mut self,
+        gfx: &graphics::Instance,
+        elapsed: Duration,
+        game_state: State,
+    ) -> UiOutput {
+        let mut actions = Vec::new();
+        self.ctx.begin_frame(egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::new(self.width_points, self.height_points),
+            )),
+            pixels_per_point: Some(self.scale),
+            events: std::mem::take(&mut self.events),
+            ..Default::default()
+        });
+        egui::Window::new("Timer window")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(false)
+            .fixed_pos(egui::pos2(10.0, 10.0))
+            .show(&self.ctx, |ui| {
+                ui.label(format!(
+                    "{:02}:{:02}",
+                    elapsed.as_secs() / 60,
+                    elapsed.as_secs() % 60
+                ));
+            });
+        match game_state {
+            State::GameInProgress => (),
+            State::GamePaused => {
+                const MENU_SIZE: egui::Vec2 = egui::vec2(200.0, 100.0);
+                egui::Window::new("Game paused")
+                    .collapsible(false)
+                    .resizable(false)
+                    .fixed_size(MENU_SIZE)
+                    .fixed_pos(egui::pos2(
+                        (self.width_points - MENU_SIZE.x) / 2.0,
+                        (self.height_points - MENU_SIZE.y) / 2.0,
+                    ))
+                    .show(&self.ctx, |ui| {
+                        ui.vertical_centered_justified(|ui| {
+                            ui.spacing_mut().button_padding.y = 10.0;
+                            if ui.button("Resume").clicked() {
+                                println!("Resuming game");
+                                actions.push(UiAction::ResumeGame);
+                            }
+                            if ui.button("Quit").clicked() {
+                                println!("Quitting");
+                                actions.push(UiAction::Quit);
+                            }
+                        });
+                    });
+            }
+        }
+        let (_output, shapes) = self.ctx.end_frame();
+        let egui_texture = self.ctx.texture();
+        let texture = match &self.texture {
+            Some(t) if t.version == egui_texture.version => t,
+            _ => {
+                println!(
+                    "Creating egui texture {} x {}",
+                    egui_texture.width, egui_texture.height
+                );
+                self.texture = Some(EguiTexture {
+                    version: egui_texture.version,
+                    texture: Rc::new(
+                        gfx.create_texture(
+                            "egui texture",
+                            egui_texture.width as u32,
+                            egui_texture.height as u32,
+                            &egui_texture
+                                .pixels
+                                .iter()
+                                .flat_map(|&x| std::iter::repeat(x).take(4))
+                                .collect::<Vec<u8>>(),
+                        ),
+                    ),
+                });
+                self.texture.as_ref().unwrap()
+            }
+        };
+        let objects: Vec<graphics::Object2d> = self
+            .ctx
+            .tessellate(shapes)
+            .iter()
+            .map(|clipped_mesh| {
+                // TODO: it could be more efficient to reuse the buffers instead of creating new ones each update
+                let mut obj = gfx.create_object_2d(
+                    &Rc::new(
+                        gfx.create_shape_2d(
+                            "egui mesh",
+                            &clipped_mesh
+                                .1
+                                .vertices
+                                .iter()
+                                .map(|v| graphics::Vertex2d {
+                                    position: [v.pos.x, v.pos.y],
+                                    tex_coords: [v.uv.x, v.uv.y],
+                                    color: v.color.to_array(),
+                                })
+                                .collect::<Vec<graphics::Vertex2d>>(),
+                            &clipped_mesh.1.indices,
+                        ),
+                    ),
+                    &texture.texture,
+                );
+                // X and Y have opposite signs here as egui coordinate system has Y direction opposite our graphics code
+                obj.set_scaling(2.0 / self.width_points, -2.0 / self.height_points);
+                obj.set_position(-1.0, 1.0);
+                obj
+            })
+            .collect();
+        UiOutput { actions, objects }
+    }
+
+    fn cursor_moved(&mut self, x: f32, y: f32) {
+        self.events.push(egui::Event::PointerMoved(egui::pos2(
+            x / self.scale,
+            y / self.scale,
+        )));
+    }
+
+    fn click(&mut self, x: f32, y: f32, pressed: bool) {
+        self.events.push(egui::Event::PointerButton {
+            pos: egui::pos2(x / self.scale, y / self.scale),
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        });
+    }
+}
+
+struct EguiTexture {
+    texture: Rc<graphics::Texture>,
+    version: u64,
+}
+
+enum UiAction {
+    ResumeGame,
+    Quit,
+}
+
+struct UiOutput {
+    actions: Vec<UiAction>,
+    objects: Vec<graphics::Object2d>,
 }

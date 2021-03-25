@@ -5,7 +5,6 @@ use std::str::FromStr;
 mod game;
 mod game_loop;
 mod graphics;
-mod ui;
 
 #[mobile_entry_point]
 pub fn init() {
@@ -155,11 +154,8 @@ fn run(
         window,
         game,
         gfx,
-        ui::Instance::new(
-            width_pixels,
-            height_pixels,
-            width_pixels as f32 / 800.0, // Scale the UI to always take the same relative amount from the available space
-        ),
+        width_pixels,
+        height_pixels,
         scene_data.scene,
         scene_data.board_id,
         scene_data.ball_id,

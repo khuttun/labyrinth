@@ -43,12 +43,8 @@ Implements the core game logic and physics. Takes no stance on how the game is p
 
 ### `game_loop`
 
-The main game loop: maintains overall application state (game in progress, paused...), handles events, updates game state and the objects in the scene graph, and triggers rendering.
+The main game loop: maintains overall application state (game in progress, paused...), handles events, updates game state and the objects in the scene graph, and triggers rendering. Also implements the 2D game UI using the [egui](https://github.com/emilk/egui) library.
 
 ### `graphics`
 
 Implements a scene graph based 3D graphics engine using the [wgpu-rs](https://github.com/gfx-rs/wgpu-rs) library. Not specific to Labyrinth, could in principle be used for other purposes also.
-
-### `ui`
-
-Implements the 2D game UI using the [egui](https://github.com/emilk/egui) library.
