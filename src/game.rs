@@ -96,6 +96,7 @@ impl Rect {
 /// Holds the information about single Labyrinth level.
 /// Level coordinate system origin is in top-left corner of the board.
 /// Positive x-axis direction is right and positive y-axis direction down.
+#[derive(Clone, Debug)]
 pub struct Level {
     pub name: String,
     pub size: Size,
@@ -141,14 +142,14 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn new(lvl: Level) -> Game {
+    pub fn new(lvl: &Level) -> Game {
         Game {
             state: State::InProgress,
             ball_pos: lvl.start,
             ball_v: Velocity { x: 0.0, y: 0.0 },
             angle_x: 0.0,
             angle_y: 0.0,
-            level: lvl,
+            level: lvl.clone(),
             prev_update: None,
         }
     }

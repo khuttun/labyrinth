@@ -146,13 +146,10 @@ fn run(
         ),
     );
 
-    // Create a new game from the level
-    let game = game::Game::new(level1);
-
     // Enter the main loop
     let mut gl = game_loop::GameLoop::new(
         window,
-        game,
+        level1,
         gfx,
         width_pixels,
         height_pixels,

@@ -18,6 +18,7 @@ type WinitEvent<'a> = Event<'a, ()>;
 
 pub struct GameLoop {
     window: Window,
+    level: game::Level,
     game: game::Game,
     gfx: graphics::Instance,
     ui: Ui,
@@ -36,7 +37,7 @@ pub struct GameLoop {
 impl GameLoop {
     pub fn new(
         window: Window,
-        game: game::Game,
+        level: game::Level,
         gfx: graphics::Instance,
         width_pixels: u32,
         height_pixels: u32,
@@ -46,8 +47,10 @@ impl GameLoop {
         static_camera: bool,
         print_stats: bool,
     ) -> GameLoop {
+        let game = game::Game::new(&level);
         GameLoop {
             window,
+            level,
             game,
             gfx,
             ui: Ui::new(
@@ -119,6 +122,7 @@ impl GameLoop {
         for action in ui_output.actions.iter() {
             match action {
                 UiAction::ResumeGame => self.resume_game(),
+                UiAction::RestartLevel => self.restart_level(),
                 UiAction::Quit => return false,
             }
         }
@@ -362,6 +366,12 @@ impl GameLoop {
             self.window.set_cursor_grab(true).unwrap();
         }
     }
+
+    fn restart_level(&mut self) {
+        self.game = game::Game::new(&self.level);
+        self.timer = Stopwatch::start_new();
+        self.resume_game(); // Ensure the game is in progress
+    }
 }
 
 // Calculates the ball position (x, y, z) when the game has been lost and the ball is falling in to hole.
@@ -500,7 +510,7 @@ impl Ui {
         match game_state {
             State::GameInProgress => (),
             State::GamePaused => {
-                const MENU_SIZE: egui::Vec2 = egui::vec2(200.0, 100.0);
+                const MENU_SIZE: egui::Vec2 = egui::vec2(200.0, 150.0);
                 egui::Window::new("Game paused")
                     .collapsible(false)
                     .resizable(false)
@@ -515,6 +525,10 @@ impl Ui {
                             if ui.button("Resume").clicked() {
                                 println!("Resuming game");
                                 actions.push(UiAction::ResumeGame);
+                            }
+                            if ui.button("Restart").clicked() {
+                                println!("Restarting level");
+                                actions.push(UiAction::RestartLevel);
                             }
                             if ui.button("Quit").clicked() {
                                 println!("Quitting");
@@ -609,6 +623,7 @@ struct EguiTexture {
 
 enum UiAction {
     ResumeGame,
+    RestartLevel,
     Quit,
 }
 
