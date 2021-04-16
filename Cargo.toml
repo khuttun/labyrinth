@@ -14,7 +14,7 @@ crate-type = [
 bytemuck = "1.4.1"
 bytemuck_derive = "1.0.0"
 clap = "2.33.3"
-egui = "0.10.0"
+egui = "0.11.0"
 futures = "0.3.7"
 image = "0.23.10"
 # Use the below form in web, see https://github.com/image-rs/image/issues/879

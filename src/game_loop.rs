@@ -111,13 +111,19 @@ impl GameLoop {
         match self.state {
             State::GameInProgress => {
                 let now = Instant::now();
-                let ball_pos_delta = self.update_game(now);
-                self.update_scene(now, ball_pos_delta);
                 self.update_frame_stats(now);
+                let ball_pos_delta = self.update_game(now);
+                if !self.update_scene(now, ball_pos_delta) {
+                    // Scene is not alive anymore, meaning the game has been won/lost.
+                    // Pause the game to stop the timer and show the menu.
+                    self.pause_game();
+                }
             }
             State::GamePaused => (),
         }
-        let ui_output = self.ui.update(&self.gfx, self.timer.elapsed(), self.state);
+        let ui_output =
+            self.ui
+                .update(&self.gfx, self.timer.elapsed(), self.state, self.game.state);
         self.gfx.render_scene(&self.scene, &ui_output.objects);
         for action in ui_output.actions.iter() {
             match action {
@@ -197,10 +203,6 @@ impl GameLoop {
     fn update_game(&mut self, now: Instant) -> glm::Vec3 {
         let p0 = self.game.ball_pos;
         self.game.update(now);
-        match self.game.state {
-            game::State::InProgress => (),
-            _ => self.timer.stop(),
-        }
         return glm::vec3(
             self.game.ball_pos.x - p0.x,
             0.0,
@@ -208,16 +210,22 @@ impl GameLoop {
         );
     }
 
-    fn update_scene(&mut self, now: Instant, ball_pos_delta: glm::Vec3) {
-        self.update_board();
+    // Return true if the scene is still alive, false if it has reached a static state
+    fn update_scene(&mut self, now: Instant, ball_pos_delta: glm::Vec3) -> bool {
         match self.game.state {
             game::State::InProgress => {
+                self.update_board();
                 let ball_pos = self.ball_pos_in_scene();
                 self.update_ball(ball_pos, ball_pos_delta);
                 self.update_camera(ball_pos);
+                true
             }
-            game::State::Lost { hole, t_lost } => self.update_ball_game_lost(now, t_lost, hole),
-            game::State::Won => (),
+            game::State::Lost { hole, t_lost } => {
+                self.update_ball_game_lost(now, t_lost, hole)
+                // Keep the scene alive for some minimum time after game is lost even if the animation finishes faster
+                    || now.duration_since(t_lost).as_secs_f32() < 0.5
+            }
+            game::State::Won => false,
         }
     }
 
@@ -284,21 +292,35 @@ impl GameLoop {
         }
     }
 
-    fn update_ball_game_lost(&mut self, now: Instant, t_lost: Instant, hole_pos: game::Point) {
+    // Return true if the animation is in progress, false if it's done
+    fn update_ball_game_lost(
+        &mut self,
+        now: Instant,
+        t_lost: Instant,
+        hole_pos: game::Point,
+    ) -> bool {
         match animate_ball_falling_in_hole(
             now.duration_since(t_lost).as_secs_f32(),
             self.game.ball_pos,
             hole_pos,
         ) {
-            Some((x, y, z)) => self.scene.get_node(self.ball_node_id).set_position(
-                x - self.game.level.size.w / 2.0,
-                z,
-                y - self.game.level.size.h / 2.0,
-            ),
-            None => self
-                .scene
-                .get_node(self.ball_node_id)
-                .set_scaling(0.0, 0.0, 0.0),
+            Some((x, y, z)) => {
+                self.scene.get_node(self.ball_node_id).set_position(
+                    x - self.game.level.size.w / 2.0,
+                    z,
+                    y - self.game.level.size.h / 2.0,
+                );
+                true
+            }
+            None => {
+                // Hide the ball after the animation is done
+                self.scene.get_node(self.ball_node_id).set_position(
+                    10.0 * self.game.level.size.w,
+                    0.0,
+                    0.0,
+                );
+                false
+            }
         }
     }
 
@@ -347,6 +369,7 @@ impl GameLoop {
     }
 
     fn pause_game(&mut self) {
+        println!("Pausing game");
         self.state = State::GamePaused;
         self.game.reset_time();
         self.timer.stop();
@@ -483,7 +506,8 @@ impl Ui {
         &mut self,
         gfx: &graphics::Instance,
         elapsed: Duration,
-        game_state: State,
+        pause_state: State,
+        game_state: game::State,
     ) -> UiOutput {
         let mut actions = Vec::new();
         self.ctx.begin_frame(egui::RawInput {
@@ -507,35 +531,61 @@ impl Ui {
                     elapsed.as_secs() % 60
                 ));
             });
-        match game_state {
+        match pause_state {
             State::GameInProgress => (),
             State::GamePaused => {
                 const MENU_SIZE: egui::Vec2 = egui::vec2(200.0, 150.0);
-                egui::Window::new("Game paused")
-                    .collapsible(false)
-                    .resizable(false)
-                    .fixed_size(MENU_SIZE)
-                    .fixed_pos(egui::pos2(
-                        (self.width_points - MENU_SIZE.x) / 2.0,
-                        (self.height_points - MENU_SIZE.y) / 2.0,
-                    ))
-                    .show(&self.ctx, |ui| {
-                        ui.vertical_centered_justified(|ui| {
-                            ui.spacing_mut().button_padding.y = 10.0;
-                            if ui.button("Resume").clicked() {
-                                println!("Resuming game");
-                                actions.push(UiAction::ResumeGame);
+                egui::Window::new(match game_state {
+                    game::State::InProgress => "Game paused",
+                    game::State::Won => "You made it through!",
+                    game::State::Lost { .. } => "Oops...",
+                })
+                .collapsible(false)
+                .resizable(false)
+                .fixed_size(MENU_SIZE)
+                .fixed_pos(egui::pos2(
+                    (self.width_points - MENU_SIZE.x) / 2.0,
+                    (self.height_points - MENU_SIZE.y) / 2.0,
+                ))
+                .show(&self.ctx, |ui| {
+                    ui.vertical_centered_justified(|ui| {
+                        ui.spacing_mut().button_padding.y = 10.0;
+                        match game_state {
+                            game::State::InProgress => {
+                                if ui.button("Resume").clicked() {
+                                    println!("Resuming game");
+                                    actions.push(UiAction::ResumeGame);
+                                }
                             }
-                            if ui.button("Restart").clicked() {
-                                println!("Restarting level");
-                                actions.push(UiAction::RestartLevel);
+                            game::State::Won => {
+                                ui.add_space(10.0);
+                                ui.label(format!(
+                                    "Your time: {:02}:{:02}.{:03}",
+                                    elapsed.as_secs() / 60,
+                                    elapsed.as_secs() % 60,
+                                    elapsed.as_millis() % 1000
+                                ));
+                                ui.add_space(10.0);
                             }
-                            if ui.button("Quit").clicked() {
-                                println!("Quitting");
-                                actions.push(UiAction::Quit);
-                            }
-                        });
+                            game::State::Lost { .. } => (),
+                        }
+                        if ui
+                            .button(match game_state {
+                                game::State::InProgress => "Restart",
+                                game::State::Won => "Play again",
+                                game::State::Lost { .. } => "Try again",
+                            })
+                            .clicked()
+                        {
+                            println!("Restarting level");
+                            actions.push(UiAction::RestartLevel);
+                        }
+                        if ui.button("Quit").clicked() {
+                            println!("Quitting");
+                            actions.push(UiAction::Quit);
+                        }
                     });
+                });
             }
         }
         let (_output, shapes) = self.ctx.end_frame();
