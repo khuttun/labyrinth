@@ -325,19 +325,20 @@ impl GameLoop {
     }
 
     fn touch_started(&mut self, pos: PhysicalPosition<f64>) {
-        let now = Instant::now();
         match self.state {
-            State::GameInProgress => (),
+            State::GameInProgress => {
+                let now = Instant::now();
+                self.double_tap_start_t = match self.double_tap_start_t {
+                    Some(t0) if now.duration_since(t0) < Duration::from_millis(400) => {
+                        self.double_tap();
+                        None
+                    }
+                    _ => Some(now),
+                };
+                self.last_touch_pos = Some(pos);
+            }
             State::GamePaused => self.ui.click(pos.x as f32, pos.y as f32, true),
         }
-        self.double_tap_start_t = match self.double_tap_start_t {
-            Some(t0) if now.duration_since(t0) < Duration::from_millis(400) => {
-                self.double_tap();
-                None
-            }
-            _ => Some(now),
-        };
-        self.last_touch_pos = Some(pos);
     }
 
     fn swipe(&mut self, pos: PhysicalPosition<f64>) {
@@ -348,10 +349,10 @@ impl GameLoop {
                     self.game.rotate_x(ROTATE_COEFF * (pos.x - p0.x) as f32);
                     self.game.rotate_y(ROTATE_COEFF * (pos.y - p0.y) as f32);
                 }
+                self.last_touch_pos = Some(pos);
             }
             State::GamePaused => self.ui.cursor_moved(pos.x as f32, pos.y as f32),
         }
-        self.last_touch_pos = Some(pos);
     }
 
     fn touch_ended(&mut self, pos: PhysicalPosition<f64>) {
@@ -373,6 +374,8 @@ impl GameLoop {
         self.state = State::GamePaused;
         self.game.reset_time();
         self.timer.stop();
+        self.double_tap_start_t = None;
+        self.last_touch_pos = None;
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         {
             self.window.set_cursor_visible(true);
