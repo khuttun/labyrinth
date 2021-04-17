@@ -2,7 +2,7 @@
 
 Labyrinth is a virtual version of [the classic labyrinth marble game](https://en.wikipedia.org/wiki/Labyrinth_(marble_game)) written in Rust.
 
-[![Labyrinth gif](labyrinth.gif)](https://youtu.be/EFMEzvK4WF0)
+[![Labyrinth gif](labyrinth.gif)](https://youtu.be/Vc1ZNcT2BvQ)
 
 ## Build
 
