@@ -47,6 +47,11 @@ impl GameLoop {
         static_camera: bool,
         print_stats: bool,
     ) -> GameLoop {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            window.set_cursor_visible(false);
+            window.set_cursor_grab(true).unwrap();
+        }
         let game = game::Game::new(&level);
         GameLoop {
             window,

@@ -75,16 +75,6 @@ pub fn init() {
             .expect("Failed to append canvas to document body");
     }
 
-    window.set_cursor_visible(false);
-
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-    {
-        window
-            .set_cursor_position(winit::dpi::PhysicalPosition::new(w / 2, h / 2))
-            .expect("Failed center cursor");
-        window.set_cursor_grab(true).expect("Failed to grab cursor");
-    }
-
     #[cfg(not(target_arch = "wasm32"))]
     {
         let mut gfx = futures::executor::block_on(graphics::Instance::new(gfx_cfg, w, h));
