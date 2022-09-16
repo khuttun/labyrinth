@@ -11,6 +11,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ControlFlow;
 use winit::window::Window;
 
+use crate::ai;
 use crate::game;
 use crate::graphics;
 
@@ -32,6 +33,7 @@ pub struct GameLoop {
     last_touch_pos: Option<PhysicalPosition<f64>>,
     timer: Stopwatch,
     stats: Option<Stats>,
+    ai: Option<Box<dyn ai::GameAi>>,
 }
 
 impl GameLoop {
@@ -46,8 +48,12 @@ impl GameLoop {
         ball_node_id: graphics::NodeId,
         static_camera: bool,
         print_stats: bool,
+        mut ai: Option<Box<dyn ai::GameAi>>,
     ) -> GameLoop {
         let game = game::Game::new(&level);
+        if let Some(ai) = &mut ai {
+            ai.init(&level);
+        }
         GameLoop {
             window,
             level,
@@ -75,6 +81,7 @@ impl GameLoop {
             } else {
                 None
             },
+            ai,
         }
     }
 
@@ -111,6 +118,11 @@ impl GameLoop {
         match self.state {
             State::GameInProgress => {
                 let now = Instant::now();
+                if let Some(ai) = &mut self.ai {
+                    let next_move = ai.next_move(&self.game, now);
+                    self.game.rotate_x(next_move.x);
+                    self.game.rotate_y(next_move.y);
+                }
                 self.update_frame_stats(now);
                 let ball_pos_delta = self.update_game(now);
                 if !self.update_scene(now, ball_pos_delta) {
@@ -175,8 +187,10 @@ impl GameLoop {
         match self.state {
             State::GameInProgress => {
                 const ROTATE_COEFF: f32 = 0.0002;
-                self.game.rotate_x(ROTATE_COEFF * delta.0 as f32);
-                self.game.rotate_y(ROTATE_COEFF * delta.1 as f32);
+                if self.ai.is_none() {
+                    self.game.rotate_x(ROTATE_COEFF * delta.0 as f32);
+                    self.game.rotate_y(ROTATE_COEFF * delta.1 as f32);
+                }
             }
             State::GamePaused => (),
         }
@@ -346,8 +360,10 @@ impl GameLoop {
             State::GameInProgress => {
                 if let Some(p0) = self.last_touch_pos {
                     const ROTATE_COEFF: f32 = 0.0004;
-                    self.game.rotate_x(ROTATE_COEFF * (pos.x - p0.x) as f32);
-                    self.game.rotate_y(ROTATE_COEFF * (pos.y - p0.y) as f32);
+                    if self.ai.is_none() {
+                        self.game.rotate_x(ROTATE_COEFF * (pos.x - p0.x) as f32);
+                        self.game.rotate_y(ROTATE_COEFF * (pos.y - p0.y) as f32);
+                    }
                 }
                 self.last_touch_pos = Some(pos);
             }
@@ -376,6 +392,9 @@ impl GameLoop {
         self.timer.stop();
         self.double_tap_start_t = None;
         self.last_touch_pos = None;
+        if let Some(ai) = &mut self.ai {
+            ai.pause();
+        }
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         {
             self.window.set_cursor_visible(true);
@@ -396,6 +415,9 @@ impl GameLoop {
     fn restart_level(&mut self) {
         self.game = game::Game::new(&self.level);
         self.timer = Stopwatch::start_new();
+        if let Some(ai) = &mut self.ai {
+            ai.init(&self.level);
+        }
         self.resume_game(); // Ensure the game is in progress
     }
 }

@@ -2,6 +2,7 @@ use mobile_entry_point::mobile_entry_point;
 use std::rc::Rc;
 use std::str::FromStr;
 
+mod ai;
 mod game;
 mod game_loop;
 mod graphics;
@@ -17,7 +18,8 @@ pub fn init() {
 
     let args = clap::App::new("labyrinth")
         .args_from_usage(
-            "-f                    'Sets fullscreen mode'
+            "-a                    'Enables AI player'
+            -f                    'Sets fullscreen mode'
             -s                    'Sets static camera'
             -t                    'Enables statistics output'
             -m, --mipmap=[LEVELS] 'Sets the number of texture mipmap levels to use'
@@ -25,6 +27,7 @@ pub fn init() {
         )
         .get_matches();
 
+    let ai = args.is_present("a");
     let fullscreen = args.is_present("f");
     let static_camera = args.is_present("s");
     let stats = args.is_present("t");
@@ -91,14 +94,14 @@ pub fn init() {
         // on Android, the first Resumed event will set the window
         #[cfg(not(target_os = "android"))]
         gfx.set_window(Some(&window));
-        run(gfx, event_loop, window, w, h, static_camera, stats);
+        run(gfx, event_loop, window, w, h, static_camera, stats, ai);
     }
     #[cfg(target_arch = "wasm32")]
     {
         wasm_bindgen_futures::spawn_local(async move {
             let mut gfx = graphics::Instance::new(gfx_cfg, w, h).await;
             gfx.set_window(Some(&window));
-            run(gfx, event_loop, window, w, h, static_camera, stats);
+            run(gfx, event_loop, window, w, h, static_camera, stats, ai);
         });
     }
 }
@@ -111,6 +114,7 @@ fn run(
     height_pixels: u32,
     static_camera: bool,
     stats: bool,
+    ai: bool,
 ) {
     // Create common assets
     let quad = Rc::new(gfx.create_shape("quad", include_str!("quad.ply")));
@@ -158,6 +162,11 @@ fn run(
         scene_data.ball_id,
         static_camera,
         stats,
+        if ai {
+            Some(Box::new(ai::PathTracerAi::new()))
+        } else {
+            None
+        },
     );
     event_loop.run(move |ev, _, cf| *cf = gl.handle_event(&ev));
 }

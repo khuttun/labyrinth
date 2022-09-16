@@ -4,7 +4,7 @@ use std::f32::consts::PI;
 
 pub const BALL_R: f32 = 20.0;
 pub const HOLE_R: f32 = 1.2 * BALL_R;
-const MAX_ANGLE: f32 = PI / 32.0;
+pub const MAX_ANGLE: f32 = PI / 32.0;
 const ACCEL_COEFF: f32 = 300.0 * BALL_R / PI;
 const BOUNCE_COEFF: f32 = 0.2;
 
@@ -104,6 +104,7 @@ pub struct Level {
     pub end: Rect,
     pub walls: Vec<Rect>,
     pub holes: Vec<Point>,
+    pub path: Vec<Point>,
 }
 
 impl Level {
@@ -116,6 +117,7 @@ impl Level {
             end: Rect::from(&data["end"]),
             walls: data["walls"].members().map(|j| Rect::from(j)).collect(),
             holes: data["holes"].members().map(|j| Point::from(j)).collect(),
+            path: data["path"].members().map(|j| Point::from(j)).collect(),
         }
     }
 }
